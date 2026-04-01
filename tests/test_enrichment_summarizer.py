@@ -192,3 +192,32 @@ class TestSummarize:
         with patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama summary"):
             result = summarize(MULTI_SENTENCE_TEXT, backend="ollama", max_chars=500, prompt="Sum:", config=config)
         assert result == "ollama summary"
+
+
+class TestSummarizeFallbackLogging:
+    def test_fallback_warning_logged_when_primary_backend_fails(self) -> None:
+        from loguru import logger
+        messages = []
+        lid = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
+        config = SummarizationConfig(backend="gemini", max_chars=500)
+        try:
+            with (
+                patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value=None),
+                patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
+            ):
+                summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
+        finally:
+            logger.remove(lid)
+        assert any("ollama" in m for m in messages), f"Expected fallback warning mentioning 'ollama', got: {messages}"
+
+    def test_no_fallback_warning_when_primary_backend_succeeds(self) -> None:
+        from loguru import logger
+        messages = []
+        lid = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
+        config = SummarizationConfig(backend="gemini", max_chars=500)
+        try:
+            with patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value="gemini result"):
+                summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
+        finally:
+            logger.remove(lid)
+        assert not any("falling back" in m for m in messages), f"Unexpected fallback warning: {messages}"
