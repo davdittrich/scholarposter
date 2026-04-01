@@ -7,22 +7,23 @@ from scholarposter.enrichment.url import unshorten_url, detect_content_type
 
 class TestUnshortenUrl:
     @respx.mock
-    def test_follows_redirect(self):
-        respx.get("https://t.co/shortlink").mock(
+    def test_follows_redirect_via_head(self):
+        """HEAD follows redirects and returns the final URL."""
+        respx.head("https://t.co/shortlink").mock(
             return_value=httpx.Response(
                 301,
                 headers={"location": "https://example.com/full-article"},
             )
         )
-        respx.get("https://example.com/full-article").mock(
-            return_value=httpx.Response(200, text="Article content")
+        respx.head("https://example.com/full-article").mock(
+            return_value=httpx.Response(200)
         )
         result = unshorten_url("https://t.co/shortlink")
         assert result == "https://example.com/full-article"
 
     @respx.mock
     def test_returns_original_on_timeout(self):
-        respx.get("https://example.com/timeout").mock(
+        respx.head("https://example.com/timeout").mock(
             side_effect=httpx.TimeoutException("timeout")
         )
         result = unshorten_url("https://example.com/timeout")
@@ -30,7 +31,7 @@ class TestUnshortenUrl:
 
     @respx.mock
     def test_returns_original_on_error(self):
-        respx.get("https://example.com/error").mock(
+        respx.head("https://example.com/error").mock(
             side_effect=httpx.ConnectError("connection refused")
         )
         result = unshorten_url("https://example.com/error")
@@ -38,11 +39,41 @@ class TestUnshortenUrl:
 
     @respx.mock
     def test_no_redirect_returns_url(self):
-        respx.get("https://example.com/direct").mock(
-            return_value=httpx.Response(200, text="Page")
+        respx.head("https://example.com/direct").mock(
+            return_value=httpx.Response(200)
         )
         result = unshorten_url("https://example.com/direct")
         assert result == "https://example.com/direct"
+
+    @respx.mock
+    def test_head_405_falls_back_to_get(self):
+        """When HEAD returns 405, fall back to GET."""
+        respx.head("https://example.com/no-head").mock(
+            return_value=httpx.Response(405)
+        )
+        respx.get("https://example.com/no-head").mock(
+            return_value=httpx.Response(
+                301,
+                headers={"location": "https://example.com/resolved"},
+            )
+        )
+        respx.get("https://example.com/resolved").mock(
+            return_value=httpx.Response(200, text="Page")
+        )
+        result = unshorten_url("https://example.com/no-head")
+        assert result == "https://example.com/resolved"
+
+    @respx.mock
+    def test_head_and_get_both_fail_returns_original(self):
+        """When HEAD returns 405 and GET also fails, return original URL."""
+        respx.head("https://example.com/both-fail").mock(
+            return_value=httpx.Response(405)
+        )
+        respx.get("https://example.com/both-fail").mock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        result = unshorten_url("https://example.com/both-fail")
+        assert result == "https://example.com/both-fail"
 
 
 class TestDetectContentType:
