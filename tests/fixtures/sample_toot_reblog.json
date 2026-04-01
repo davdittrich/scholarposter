@@ -1,0 +1,61 @@
+{
+  "id": "113456789099999999",
+  "created_at": "2024-01-15T11:00:00.000Z",
+  "content": "",
+  "url": "https://fediscience.org/@davdittrich/113456789099999999",
+  "sensitive": false,
+  "spoiler_text": "",
+  "visibility": "public",
+  "language": null,
+  "replies_count": 0,
+  "reblogs_count": 0,
+  "favourites_count": 0,
+  "edited_at": null,
+  "poll": null,
+  "card": null,
+  "media_attachments": [],
+  "mentions": [],
+  "tags": [],
+  "emojis": [],
+  "account": {
+    "id": "109276496085205920",
+    "username": "davdittrich",
+    "acct": "davdittrich",
+    "display_name": "Dave Dittrich",
+    "url": "https://fediscience.org/@davdittrich"
+  },
+  "reblog": {
+    "id": "113400000000000001",
+    "created_at": "2024-01-14T08:00:00.000Z",
+    "content": "<p>Original post about economic theory with a link: https://example.com/paper #Economics</p>",
+    "url": "https://other.instance/@researcher/113400000000000001",
+    "sensitive": false,
+    "spoiler_text": "",
+    "visibility": "public",
+    "language": "en",
+    "poll": null,
+    "media_attachments": [
+      {
+        "id": "22345678",
+        "type": "image",
+        "url": "https://other.instance/media/image.jpg",
+        "remote_url": null,
+        "description": "A chart showing economic trends",
+        "meta": {
+          "original": {"width": 1200, "height": 800}
+        }
+      }
+    ],
+    "tags": [
+      {"name": "Economics", "url": "https://other.instance/tags/Economics"}
+    ],
+    "emojis": [],
+    "account": {
+      "id": "987654321",
+      "username": "researcher",
+      "acct": "researcher@other.instance",
+      "display_name": "Jane :verified: Researcher",
+      "url": "https://other.instance/@researcher"
+    }
+  }
+}

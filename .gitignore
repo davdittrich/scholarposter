@@ -1,0 +1,43 @@
+# Secrets — NEVER commit these
+.env
+config.py
+credentials.json
+*.secret
+
+# State files
+lasttoot*.txt
+state.json
+state.json.tmp
+cache.json
+cache.json.tmp
+scholarposter.lock
+config.toml
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

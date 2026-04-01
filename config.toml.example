@@ -1,0 +1,96 @@
+# scholarposter configuration — copy to config.toml and edit
+
+[mastodon]
+instance = "https://fediscience.org"
+credentials_file = "pytooter_usercred.secret"
+
+[platforms.bluesky]
+enabled = true
+
+[platforms.bluesky.filters]
+skip_hashtags = ["nobridge", "private"]
+skip_content_types = ["sensitive"]
+require_hashtags = []  # empty = post all
+
+[platforms.bluesky.media]
+enabled = true
+max_image_size_kb = 950
+max_video_size_mb = 50
+supported_types = ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4"]
+
+# Prepend a hashtag to Bluesky posts when the toot contains certain hashtags.
+# Multiple rules are allowed — each fires independently.
+[[platforms.bluesky.hashtag_rules]]
+add_hashtag = "EconSky"
+if_any_hashtag = ["Economics", "GameTheory", "Labor", "Market", "Wage", "BoundedRationality"]
+
+# [[platforms.bluesky.hashtag_rules]]
+# add_hashtag = "AcademicSky"
+# if_any_hashtag = ["Research", "Science", "Academia"]
+
+[platforms.linkedin]
+enabled = true
+
+[platforms.linkedin.filters]
+skip_hashtags = ["nobridge", "shitpost"]
+skip_content_types = ["sensitive", "poll"]
+require_hashtags = []
+
+[platforms.linkedin.media]
+enabled = true
+max_image_size_kb = 5000
+max_video_size_mb = 200
+supported_types = ["image/jpeg", "image/png", "image/gif", "video/mp4"]
+
+[enrichment.crossref]
+enabled = true
+etiquette_email = "your-email@example.com"
+cache_ttl_days = 7
+timeout_seconds = 5
+
+[enrichment.summarization]
+enabled = true
+backend = "gemini"  # "gemini", "ollama", "extractive" — falls back automatically on failure
+max_chars = 500
+prompt = "Summarize this academic paper/article in 2-3 sentences for a social media post. Focus on the key finding and methodology. Be concise and precise."
+
+[enrichment.summarization.gemini]
+timeout_seconds = 30
+
+[enrichment.summarization.ollama]
+model = "gemma2:9b"
+host = "http://localhost:11434"
+timeout_seconds = 30
+
+[enrichment.summarization.extractive]
+algorithm = "kl"
+max_sentences = 5
+timeout_seconds = 10
+
+[enrichment.url_unshorten]
+enabled = true
+timeout_seconds = 10
+max_redirects = 5
+
+[[notifications.backends]]
+type = "ntfy"
+topic = "scholarposter"
+server = "https://ntfy.sh"
+
+# [[notifications.backends]]
+# type = "email"
+# smtp_host = "smtp.example.com"
+# smtp_port = 587
+# from = "alerts@example.com"
+# to = "you@example.com"
+
+[logging]
+level = "INFO"  # DEBUG, INFO, WARNING, ERROR
+file = "scholarposter.log"
+rotation = "10 MB"
+retention = "30 days"
+
+[state]
+state_file = "state.json"
+cache_file = "cache.json"
+lock_file = "scholarposter.lock"

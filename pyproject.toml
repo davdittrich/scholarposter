@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "scholarposter"
+version = "0.1.0"
+description = "Cross-post from Mastodon to Bluesky and LinkedIn"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28",
+    "pydantic>=2.0",
+    "atproto>=0.0.55",
+    "Mastodon.py>=2.0",
+    "beautifulsoup4",
+    "lxml",
+    "Pillow",
+    "sumy",
+    "crossrefapi",
+    "python-dotenv",
+    "typer>=0.9",
+    "loguru",
+    "trafilatura",
+    "PyMuPDF",
+    "pymupdf4llm",
+    "av",
+    "tomli-w",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "respx>=0.21"]
+
+[project.scripts]
+scholarposter = "scholarposter.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short --strict-markers"
+markers = ["integration: integration tests (deselect with '-m not integration')"]

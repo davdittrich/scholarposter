@@ -1,0 +1,31 @@
+{
+  "id": "113456789012345678",
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "content": "<p>New paper on game theory and economics! Check out this DOI: https://doi.org/10.1007/s00355-023-01479-3 #Economics #GameTheory</p>",
+  "url": "https://fediscience.org/@davdittrich/113456789012345678",
+  "sensitive": false,
+  "spoiler_text": "",
+  "visibility": "public",
+  "language": "en",
+  "replies_count": 0,
+  "reblogs_count": 1,
+  "favourites_count": 3,
+  "edited_at": null,
+  "reblog": null,
+  "poll": null,
+  "card": null,
+  "media_attachments": [],
+  "mentions": [],
+  "tags": [
+    {"name": "Economics", "url": "https://fediscience.org/tags/Economics"},
+    {"name": "GameTheory", "url": "https://fediscience.org/tags/GameTheory"}
+  ],
+  "emojis": [],
+  "account": {
+    "id": "109276496085205920",
+    "username": "davdittrich",
+    "acct": "davdittrich",
+    "display_name": "Dave Dittrich",
+    "url": "https://fediscience.org/@davdittrich"
+  }
+}

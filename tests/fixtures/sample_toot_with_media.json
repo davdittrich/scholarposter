@@ -1,0 +1,43 @@
+{
+  "id": "113456789011111111",
+  "created_at": "2024-01-15T12:00:00.000Z",
+  "content": "<p>Here is a figure from our latest research paper. #DataScience #Research</p>",
+  "url": "https://fediscience.org/@davdittrich/113456789011111111",
+  "sensitive": false,
+  "spoiler_text": "",
+  "visibility": "public",
+  "language": "en",
+  "replies_count": 0,
+  "reblogs_count": 0,
+  "favourites_count": 5,
+  "edited_at": null,
+  "reblog": null,
+  "poll": null,
+  "card": null,
+  "media_attachments": [
+    {
+      "id": "12345678",
+      "type": "image",
+      "url": "https://fediscience.org/media/12345678/original.jpg",
+      "remote_url": null,
+      "description": "A scatter plot showing correlation between variables X and Y across 500 samples",
+      "meta": {
+        "original": {"width": 1920, "height": 1080, "size": "1920x1080", "aspect": 1.7778},
+        "small": {"width": 400, "height": 225, "size": "400x225", "aspect": 1.7778}
+      }
+    }
+  ],
+  "mentions": [],
+  "tags": [
+    {"name": "DataScience", "url": "https://fediscience.org/tags/DataScience"},
+    {"name": "Research", "url": "https://fediscience.org/tags/Research"}
+  ],
+  "emojis": [],
+  "account": {
+    "id": "109276496085205920",
+    "username": "davdittrich",
+    "acct": "davdittrich",
+    "display_name": "Dave Dittrich",
+    "url": "https://fediscience.org/@davdittrich"
+  }
+}

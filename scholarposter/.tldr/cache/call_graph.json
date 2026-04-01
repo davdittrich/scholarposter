@@ -1,0 +1,302 @@
+{
+  "edges": [
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "_build_facets",
+      "to_file": "adapters/bluesky.py",
+      "to_func": "parse_mentions"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "_dispatch_post",
+      "to_file": "adapters/bluesky.py",
+      "to_func": "BlueskyAdapter"
+    },
+    {
+      "from_file": "collector.py",
+      "from_func": "_toot_to_unified_post",
+      "to_file": "collector.py",
+      "to_func": "extract_urls"
+    },
+    {
+      "from_file": "collector.py",
+      "from_func": "_toot_to_unified_post",
+      "to_file": "models.py",
+      "to_func": "UnifiedPost"
+    },
+    {
+      "from_file": "adapters/linkedin.py",
+      "from_func": "post",
+      "to_file": "enrichment/media.py",
+      "to_func": "download_media"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_url",
+      "to_file": "enrichment/url.py",
+      "to_func": "unshorten_url"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_html",
+      "to_file": "enrichment/html.py",
+      "to_func": "extract_body_text"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_pdf",
+      "to_file": "enrichment/pdf.py",
+      "to_func": "extract_pdf_text"
+    },
+    {
+      "from_file": "collector.py",
+      "from_func": "_toot_to_unified_post",
+      "to_file": "models.py",
+      "to_func": "MediaAttachment"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "run",
+      "to_file": "models.py",
+      "to_func": "PlatformState"
+    },
+    {
+      "from_file": "adapters/linkedin.py",
+      "from_func": "_build_payload",
+      "to_file": "adapters/linkedin.py",
+      "to_func": "post"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_html",
+      "to_file": "enrichment/doi.py",
+      "to_func": "detect_dois"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "_build_embed",
+      "to_file": "enrichment/media.py",
+      "to_func": "resize_image"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "chunk_text",
+      "to_file": "adapters/bluesky.py",
+      "to_func": "_grapheme_len"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_html",
+      "to_file": "enrichment/html.py",
+      "to_func": "extract_og_tags"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "_build_embed",
+      "to_file": "enrichment/media.py",
+      "to_func": "download_media"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "post",
+      "to_file": "filters.py",
+      "to_func": "apply_hashtag_rules"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_doi",
+      "to_file": "enrichment/doi.py",
+      "to_func": "lookup_doi"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "run",
+      "to_file": "state.py",
+      "to_func": "StateManager"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_pdf",
+      "to_file": "enrichment/doi.py",
+      "to_func": "detect_dois"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_doi",
+      "to_file": "enrichment/doi.py",
+      "to_func": "detect_dois"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_url",
+      "to_file": "enrichment/url.py",
+      "to_func": "detect_content_type"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "run",
+      "to_file": "cli.py",
+      "to_func": "setup_logging"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "status",
+      "to_file": "state.py",
+      "to_func": "StateManager"
+    },
+    {
+      "from_file": "enrichment/summarizer.py",
+      "from_func": "summarize",
+      "to_file": "enrichment/summarizer.py",
+      "to_func": "_build_backend_order"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "post",
+      "to_file": "adapters/bluesky.py",
+      "to_func": "_build_facets"
+    },
+    {
+      "from_file": "enrichment/summarizer.py",
+      "from_func": "summarize",
+      "to_file": "enrichment/summarizer.py",
+      "to_func": "summarize_gemini"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "_build_facets",
+      "to_file": "adapters/bluesky.py",
+      "to_func": "parse_tags"
+    },
+    {
+      "from_file": "adapters/linkedin.py",
+      "from_func": "post",
+      "to_file": "models.py",
+      "to_func": "PostResult"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "post",
+      "to_file": "models.py",
+      "to_func": "PostResult"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "run",
+      "to_file": "cli.py",
+      "to_func": "_dispatch_post"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "_build_embed",
+      "to_file": "adapters/bluesky.py",
+      "to_func": "post"
+    },
+    {
+      "from_file": "collector.py",
+      "from_func": "_toot_to_unified_post",
+      "to_file": "collector.py",
+      "to_func": "extract_hashtags"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "run",
+      "to_file": "filters.py",
+      "to_func": "evaluate_filters"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "_dispatch_post",
+      "to_file": "models.py",
+      "to_func": "PostResult"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "_build_facets",
+      "to_file": "adapters/bluesky.py",
+      "to_func": "parse_urls"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_url",
+      "to_file": "enrichment/summarizer.py",
+      "to_func": "summarize"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_pdf",
+      "to_file": "enrichment/pdf.py",
+      "to_func": "extract_pdf_metadata"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "run",
+      "to_file": "collector.py",
+      "to_func": "MastodonCollector"
+    },
+    {
+      "from_file": "collector.py",
+      "from_func": "_toot_to_unified_post",
+      "to_file": "collector.py",
+      "to_func": "_mime_from_attachment"
+    },
+    {
+      "from_file": "cli.py",
+      "from_func": "_dispatch_post",
+      "to_file": "adapters/linkedin.py",
+      "to_func": "LinkedInAdapter"
+    },
+    {
+      "from_file": "filters.py",
+      "from_func": "evaluate_filters",
+      "to_file": "filters.py",
+      "to_func": "FilterResult"
+    },
+    {
+      "from_file": "enrichment/summarizer.py",
+      "from_func": "summarize",
+      "to_file": "enrichment/summarizer.py",
+      "to_func": "summarize_extractive"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_pdf",
+      "to_file": "enrichment/media.py",
+      "to_func": "download_media"
+    },
+    {
+      "from_file": "adapters/bluesky.py",
+      "from_func": "post",
+      "to_file": "adapters/bluesky.py",
+      "to_func": "chunk_text"
+    },
+    {
+      "from_file": "enrichment/html.py",
+      "from_func": "extract_og_tags",
+      "to_file": "enrichment/html.py",
+      "to_func": "_og"
+    },
+    {
+      "from_file": "enrichment/pipeline.py",
+      "from_func": "_enrich_url",
+      "to_file": "models.py",
+      "to_func": "LinkEnrichment"
+    },
+    {
+      "from_file": "enrichment/summarizer.py",
+      "from_func": "summarize",
+      "to_file": "enrichment/summarizer.py",
+      "to_func": "summarize_ollama"
+    },
+    {
+      "from_file": "collector.py",
+      "from_func": "_toot_to_unified_post",
+      "to_file": "collector.py",
+      "to_func": "strip_html"
+    }
+  ],
+  "languages": [
+    "python"
+  ],
+  "timestamp": 1774999859.90429
+}
