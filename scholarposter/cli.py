@@ -262,8 +262,8 @@ def status(
                     pending_counts[plat] = f"{count}+" if count >= 50 else str(count)
                 else:
                     pending_counts[plat] = "?"
-        except Exception:
-            pass  # API unavailable; pending counts remain unknown
+        except Exception as e:
+            logger.debug(f"Could not fetch pending counts: {e}")
 
     for plat, data in state.items():
         pending = pending_counts.get(plat, "?")

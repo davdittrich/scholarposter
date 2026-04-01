@@ -120,13 +120,13 @@ class TestSummarizeOllama:
 
 class TestSummarizeExtractive:
     def test_returns_non_empty_string_for_multi_sentence_text(self) -> None:
-        result = summarize_extractive(MULTI_SENTENCE_TEXT, max_sentences=3, timeout=10)
+        result = summarize_extractive(MULTI_SENTENCE_TEXT, max_sentences=3)
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_returns_empty_string_for_short_text(self) -> None:
         """A single sentence (< 2 sentences) should return empty string."""
-        result = summarize_extractive("Just one sentence.", max_sentences=3, timeout=10)
+        result = summarize_extractive("Just one sentence.", max_sentences=3)
         assert result == ""
 
     def test_returns_empty_string_for_two_sentences(self) -> None:
@@ -134,15 +134,19 @@ class TestSummarizeExtractive:
         result = summarize_extractive(
             "First sentence here. Second sentence here.",
             max_sentences=3,
-            timeout=10,
         )
         # Two sentences total - boundary behavior: empty or non-empty depending on impl
         # We just verify it doesn't crash and returns a string
         assert isinstance(result, str)
 
     def test_max_sentences_limits_output(self) -> None:
-        result = summarize_extractive(MULTI_SENTENCE_TEXT, max_sentences=2, timeout=10)
+        result = summarize_extractive(MULTI_SENTENCE_TEXT, max_sentences=2)
         assert isinstance(result, str)
+
+    def test_max_chars_limits_output_length(self) -> None:
+        """summarize_extractive must not return more chars than max_chars."""
+        result = summarize_extractive(MULTI_SENTENCE_TEXT, max_sentences=10, max_chars=50)
+        assert len(result) <= 50
 
 
 class TestSummarize:
