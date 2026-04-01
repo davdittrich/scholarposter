@@ -6,6 +6,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import grapheme as _grapheme_mod
+
 from atproto import models
 from loguru import logger
 
@@ -67,8 +69,8 @@ def parse_tags(text: str) -> list[dict[str, Any]]:
 
 
 def _grapheme_len(text: str) -> int:
-    """Count graphemes (approximated as Unicode codepoints for simplicity)."""
-    return len(text)
+    """Count grapheme clusters (correct for AT Protocol)."""
+    return _grapheme_mod.length(text)
 
 
 def chunk_text(text: str, max_graphemes: int = MAX_GRAPHEMES) -> list[str]:
@@ -110,7 +112,12 @@ def chunk_text(text: str, max_graphemes: int = MAX_GRAPHEMES) -> list[str]:
             # Truncate chunk if needed to fit suffix
             room = max_graphemes - _grapheme_len(suffix)
             if _grapheme_len(chunk) > room:
-                chunk = chunk[:room].rstrip()
+                truncated = _grapheme_mod.slice(chunk, 0, room)
+                # Word-boundary truncation
+                last_space = truncated.rfind(" ")
+                if last_space > 0:
+                    truncated = truncated[:last_space]
+                chunk = truncated
             suffixed.append(chunk + suffix)
         return suffixed
 
@@ -253,8 +260,8 @@ class BlueskyAdapter(BaseAdapter):
                             image=upload.blob,
                         )
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Bluesky image embed failed for {att.url}: {e}")
             if images:
                 return models.AppBskyEmbedImages.Main(images=images)
 
