@@ -71,7 +71,7 @@ prompt = "Summarize this academic paper."
 timeout_seconds = 30
 
 [enrichment.summarization.ollama]
-model = "gemma2:9b"
+model = "gemma3:9b"
 host = "http://localhost:11434"
 timeout_seconds = 30
 
@@ -183,7 +183,7 @@ class TestFullConfig:
         assert s.enabled is True
         assert s.backend == "gemini"
         assert s.gemini.timeout_seconds == 30
-        assert s.ollama.model == "gemma2:9b"
+        assert s.ollama.model == "gemma3:9b"
         assert s.extractive.algorithm == "kl"
 
     def test_notifications_config(self, full_config_file):

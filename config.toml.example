@@ -58,7 +58,7 @@ prompt = "Summarize this academic paper/article in 2-3 sentences for a social me
 timeout_seconds = 30
 
 [enrichment.summarization.ollama]
-model = "gemma2:9b"
+model = "gemma3:9b"
 host = "http://localhost:11434"
 timeout_seconds = 30
 

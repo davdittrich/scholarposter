@@ -72,7 +72,7 @@ class TestSummarizeOllama:
         with patch("httpx.post", return_value=mock_response):
             result = summarize_ollama(
                 "some text",
-                model="gemma2:9b",
+                model="gemma3:9b",
                 host="http://localhost:11434",
                 prompt="Summarize:",
                 timeout=30,
@@ -83,7 +83,7 @@ class TestSummarizeOllama:
         with patch("httpx.post", side_effect=httpx.TimeoutException("timeout")):
             result = summarize_ollama(
                 "some text",
-                model="gemma2:9b",
+                model="gemma3:9b",
                 host="http://localhost:11434",
                 prompt="Summarize:",
                 timeout=30,
@@ -94,7 +94,7 @@ class TestSummarizeOllama:
         with patch("httpx.post", side_effect=httpx.HTTPError("error")):
             result = summarize_ollama(
                 "some text",
-                model="gemma2:9b",
+                model="gemma3:9b",
                 host="http://localhost:11434",
                 prompt="Summarize:",
                 timeout=30,

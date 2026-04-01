@@ -16,7 +16,6 @@ dependencies = [
     "lxml",
     "Pillow",
     "sumy",
-    "crossrefapi",
     "python-dotenv",
     "typer>=0.9",
     "loguru",

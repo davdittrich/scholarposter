@@ -10,7 +10,7 @@ Cross-post your Mastodon toots to Bluesky and LinkedIn — automatically, one at
 - Posts to Bluesky and/or LinkedIn with media attachments, link cards, and rich-text facets
 - Threads long posts automatically (Bluesky 300-grapheme limit)
 - Prepends platform-specific hashtags based on trigger rules (e.g., add `#EconSky` when the toot contains `#Economics`)
-- Sends push notifications via ntfy.sh on failure
+- Sends failure notifications via ntfy.sh, signal-cli, or email (SMTP)
 - Maintains state so each toot is posted exactly once, per platform
 
 ---
@@ -76,7 +76,7 @@ Controls which toots get posted.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `skip_hashtags` | `[]` | Skip toots containing any of these hashtags (case-insensitive) |
-| `skip_content_types` | `[]` | Skip `"sensitive"` (CW/NSFW) and/or `"poll"` toots |
+| `skip_content_types` | `[]` | Skip `"sensitive"` (CW/NSFW), `"poll"`, and/or `"media_only"` (media with no text) toots |
 | `require_hashtags` | `[]` | Only post toots that contain at least one of these hashtags; empty = post all |
 
 ### `[[platforms.bluesky.hashtag_rules]]`
@@ -138,16 +138,32 @@ Follows redirects to resolve shortened URLs before enrichment.
 
 ### `[[notifications.backends]]`
 
-Push notifications on error. Currently supports `ntfy`.
+Push notifications on error. Supported backends: `ntfy`, `signal`, `email`.
 
 ```toml
+# ntfy (recommended — zero-setup push notifications)
 [[notifications.backends]]
 type = "ntfy"
 topic = "scholarposter"
 server = "https://ntfy.sh"
+
+# signal-cli REST API
+[[notifications.backends]]
+type = "signal"
+api_url = "http://localhost:8080"
+phone_number = "+1234567890"
+recipients = ["+0987654321"]
+
+# Email via SMTP (credentials via SMTP_USER/SMTP_PASSWORD env vars)
+[[notifications.backends]]
+type = "email"
+smtp_host = "smtp.example.com"
+smtp_port = 587
+from_addr = "alerts@example.com"
+to_addr = "you@example.com"
 ```
 
-Subscribe to notifications at `https://ntfy.sh/your-topic` or install the ntfy Android/iOS app.
+Subscribe to ntfy at `https://ntfy.sh/your-topic` or install the ntfy Android/iOS app.
 
 ### `[logging]`
 
@@ -196,7 +212,7 @@ scholarposter run --verbose      # DEBUG level to stderr
 scholarposter run --quiet        # suppress INFO, show WARNING and above
 ```
 
-Show last processed toot ID per platform:
+Show last processed toot ID and pending count per platform:
 
 ```bash
 scholarposter status
@@ -236,7 +252,7 @@ Adjust to match wherever your `gemini` binary lives (`which gemini`).
 
 ## Notifications
 
-scholarposter sends a push notification when a post fails. Configure ntfy in `config.toml`:
+scholarposter sends a notification when a post fails (max 1 per platform per run). Three backends are available — configure any combination in `config.toml`:
 
 ```toml
 [[notifications.backends]]

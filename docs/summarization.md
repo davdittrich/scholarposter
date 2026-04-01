@@ -48,7 +48,7 @@ gemini -p "<your prompt>"
 
 ### Install
 
-Install the Google Gemini CLI. The exact package name may vary; as of early 2025:
+Install the Google Gemini CLI. The exact package name may vary; as of early 2026:
 
 ```bash
 pip install google-generativeai
@@ -123,8 +123,9 @@ systemctl enable --now ollama
 
 | Model | Pull command | RAM needed | Best for |
 |-------|-------------|-----------|----------|
-| `gemma2:9b` | `ollama pull gemma2:9b` | ~6 GB | Default; strong precision/speed for academic text |
-| `gemma3:9b` | `ollama pull gemma3:9b` | ~6 GB | 2025 release; better instruction following |
+| `gemma3:9b` | `ollama pull gemma3:9b` | ~6 GB | Default; superior instruction following for structured academic extraction |
+| `llama4:8b` | `ollama pull llama4:8b` | ~8 GB | Advanced reasoning and multi-step synthesis of complex papers |
+| `deepseek-v4:7b` | `ollama pull deepseek-v4:7b` | ~5 GB | Best performance-to-size ratio; strong on multilingual academic text |
 | `mistral-nemo:12b` | `ollama pull mistral-nemo:12b` | ~8 GB | Best with LaTeX/PDF artifacts and long abstracts |
 | `phi4:3.8b` | `ollama pull phi4:3.8b` | ~3 GB | Lightweight; for NAS/homelab with limited RAM |
 
@@ -132,7 +133,7 @@ systemctl enable --now ollama
 
 ```bash
 curl http://localhost:11434/api/generate \
-  -d '{"model":"gemma2:9b","prompt":"hello","stream":false}'
+  -d '{"model":"gemma3:9b","prompt":"hello","stream":false}'
 ```
 
 You should see a JSON response with a `"response"` field.
@@ -144,7 +145,7 @@ You should see a JSON response with a `"response"` field.
 backend = "ollama"
 
 [enrichment.summarization.ollama]
-model = "gemma2:9b"
+model = "gemma3:9b"
 host = "http://localhost:11434"
 timeout_seconds = 30
 ```
