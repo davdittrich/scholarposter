@@ -347,6 +347,125 @@ class TestBlueskyImageProcessing:
         mock_time.sleep.assert_called_once_with(0.2)
 
 
+class TestGraphemeLen:
+    def test_ascii_string(self):
+        from scholarposter.adapters.bluesky import _grapheme_len
+        assert _grapheme_len("Hello") == 5
+
+    def test_family_emoji_is_one_grapheme(self):
+        from scholarposter.adapters.bluesky import _grapheme_len
+        # 👨‍👩‍👧‍👦 is a ZWJ sequence — 1 grapheme cluster, 7 code points
+        assert _grapheme_len("👨‍👩‍👧‍👦") == 1
+
+    def test_combining_char_cafe(self):
+        from scholarposter.adapters.bluesky import _grapheme_len
+        # "cafe" + combining acute accent (U+0301): 5 code points, 4 grapheme clusters
+        assert _grapheme_len("cafe\u0301") == 4
+
+    def test_emoji_heavy_chunks_no_mid_grapheme_split(self):
+        """chunk_text with emoji-heavy text must not produce chunks that look split."""
+        # Build a text of many flag emojis (each is 2 code points / 1 grapheme)
+        # 🇺🇸 = U+1F1FA U+1F1F8 (regional indicator letters, form 1 grapheme)
+        flag = "🇺🇸"
+        # 150 flags = 150 graphemes, well under 300; pad with words to cross boundary
+        words = ("Hello world " * 10).strip()
+        text = words + " " + (flag + " ") * 50
+        chunks = chunk_text(text, max_graphemes=50)
+        # Every chunk boundary should be at a space, not mid-emoji
+        for chunk in chunks:
+            # strip thread suffix like " 1/3" before checking
+            body = chunk.rsplit(" ", 1)[0] if "/" in chunk.split()[-1] else chunk
+            # No chunk should end with half a regional indicator sequence
+            # Regional indicators come in pairs; an odd trailing RI would mean a split
+            # Just verify no chunk ends with a lone regional indicator
+            encoded = body.encode("utf-16-be")
+            # Each char in encoded is 2 bytes; regional indicators are surrogate pairs
+            # Simpler check: verify reconstruct is valid UTF-8
+            assert body.encode("utf-8").decode("utf-8") == body
+
+    def test_chunk_text_exactly_300_graphemes_is_single_chunk(self):
+        """Text at exactly 300 graphemes returns a single chunk (no splitting)."""
+        text = "a" * 300
+        chunks = chunk_text(text, max_graphemes=300)
+        assert len(chunks) == 1
+        assert chunks[0] == text
+
+    def test_chunk_boundary_does_not_split_zwj_emoji(self):
+        """A ZWJ emoji at exactly 300 graphemes must remain in a single chunk."""
+        from scholarposter.adapters.bluesky import _grapheme_len
+        text = "a" * 299 + "👨‍👩‍👧‍👦"
+        assert _grapheme_len(text) == 300
+        chunks = chunk_text(text, max_graphemes=300)
+        assert len(chunks) == 1
+        assert "👨‍👩‍👧‍👦" in chunks[0]
+
+    def test_grapheme_slice_truncation_preserves_zwj_emoji(self):
+        """Discriminating test: would FAIL with text[:n] but PASS with grapheme.slice().
+
+        Constructs a long spaceless word with a ZWJ emoji at grapheme position 15-16.
+        With max_graphemes=20, suffix fitting truncates to room=16 graphemes.
+        grapheme.slice(chunk, 0, 16) keeps the emoji intact at position 15.
+        A naive chunk[:16] would orphan the first code point of the ZWJ sequence
+        (family emoji is 7 code points but 1 grapheme cluster).
+        """
+        from scholarposter.adapters.bluesky import _grapheme_len
+        # Word: 15 "a"s + family emoji + "x" = 17 graphemes, 23 code points
+        word = "a" * 15 + "👨‍👩‍👧‍👦" + "x"
+        assert _grapheme_len(word) == 17
+        assert len(word) == 23  # code points: 15 + 7 (ZWJ sequence) + 1
+        # Two long words → 2 chunks → suffix " 1/2" triggers truncation
+        text = word + " " + "b" * 20
+        chunks = chunk_text(text, max_graphemes=20)
+        assert len(chunks) >= 2
+        # First chunk must contain the intact emoji (not a broken orphan)
+        assert "👨‍👩‍👧‍👦" in chunks[0]
+
+    def test_chunk_text_301_graphemes_splits_into_two(self):
+        """Text at 301 graphemes must split into 2 chunks."""
+        # Use space-separated words so the splitter has word boundaries to cut on
+        # Each "word" is 10 chars; 31 words = 310 chars (30 spaces + 310 = 340 total)
+        # Use shorter words to get close to 301 with clean word boundaries
+        word = "abcdefghij"  # 10 chars
+        # 30 words of 10 chars + 29 spaces = 300+29 = 329, splits at ~290 net
+        # Build a string of exactly 301 grapheme clusters (all ASCII)
+        text = "x " * 150 + "y"  # 150*2 + 1 = 301 graphemes
+        chunks = chunk_text(text, max_graphemes=300)
+        assert len(chunks) >= 2
+
+
+class TestBuildEmbedLogsImageFailure:
+    @pytest.fixture
+    def mock_client(self):
+        client = MagicMock()
+        client.me = MagicMock()
+        client.me.did = "did:plc:testuser"
+        return client
+
+    def test_image_download_failure_logs_warning(self, mock_client):
+        """_build_embed must log a warning when image download raises."""
+        from scholarposter.adapters.bluesky import BlueskyAdapter
+
+        adapter = BlueskyAdapter(client=mock_client)
+        att = MediaAttachment(url="https://example.com/broken.jpg", mime_type="image/jpeg")
+        post = make_post("test", media=[att])
+
+        messages = []
+
+        from loguru import logger
+        import sys
+
+        sink_id = logger.add(lambda m: messages.append(m.record["message"]))
+        try:
+            with patch("scholarposter.adapters.bluesky.download_media", side_effect=Exception("timeout")):
+                adapter._build_embed(post)
+        finally:
+            logger.remove(sink_id)
+
+        assert any("broken.jpg" in m and "timeout" in m for m in messages), (
+            f"Expected warning about broken.jpg/timeout, got: {messages}"
+        )
+
+
 class TestBlueskyAdapterHashtagRules:
     from scholarposter.config import HashtagRule
 

@@ -41,7 +41,7 @@ class StateManager:
 
     def update_platform_state(self, platform: str, ps: PlatformState) -> None:
         state = self.load_state()
-        entry: dict[str, Any] = {}
+        entry = state.get(platform, {}).copy()  # preserve existing fields
         if ps.last_toot_id is not None:
             entry["last_toot_id"] = ps.last_toot_id
         if ps.last_status is not None:
@@ -50,6 +50,9 @@ class StateManager:
             entry["last_posted_at"] = ps.last_posted_at.isoformat()
         if ps.last_error is not None:
             entry["last_error"] = ps.last_error
+        elif ps.last_status is not None and ps.last_status != "failed":
+            # On non-failure, clear any stale error from prior run
+            entry.pop("last_error", None)
         state[platform] = entry
         self._save_state(state)
 
@@ -95,7 +98,8 @@ class StateManager:
             for k, v in cache.items()
             if datetime.fromisoformat(v["expires_at"]) > now
         }
-        self._save_cache(pruned)
+        if len(pruned) < len(cache):
+            self._save_cache(pruned)
 
     # -------------------------------------------------------------------------
     # Locking
@@ -121,7 +125,8 @@ class StateManager:
 
     @contextmanager
     def lock(self) -> Generator[None, None, None]:
-        self.acquire_lock()
+        if not self.acquire_lock():
+            raise RuntimeError("Could not acquire lock")
         try:
             yield
         finally:

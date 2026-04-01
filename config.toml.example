@@ -81,8 +81,8 @@ server = "https://ntfy.sh"
 # type = "email"
 # smtp_host = "smtp.example.com"
 # smtp_port = 587
-# from = "alerts@example.com"
-# to = "you@example.com"
+# from_addr = "alerts@example.com"
+# to_addr = "you@example.com"
 
 [logging]
 level = "INFO"  # DEBUG, INFO, WARNING, ERROR

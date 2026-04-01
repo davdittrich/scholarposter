@@ -66,6 +66,71 @@ class TestDetectDois:
         result = detect_dois([], text)
         assert any("10.1016" in doi for doi in result)
 
+    def test_strips_trailing_period_from_text(self) -> None:
+        """Trailing sentence period must not be captured as part of the DOI."""
+        text = "See 10.1234/foo.bar."
+        result = detect_dois([], text)
+        assert "10.1234/foo.bar" in result
+        assert "10.1234/foo.bar." not in result
+
+    def test_strips_trailing_semicolon_from_text(self) -> None:
+        """Trailing semicolon must not be captured as part of the DOI."""
+        text = "DOI: 10.1234/foo.bar;"
+        result = detect_dois([], text)
+        assert "10.1234/foo.bar" in result
+        assert "10.1234/foo.bar;" not in result
+
+    def test_preserves_trailing_paren_in_suffix(self) -> None:
+        """Closing parenthesis that is part of the DOI suffix must be preserved."""
+        text = "10.1000/xyz(2024)"
+        result = detect_dois([], text)
+        assert "10.1000/xyz(2024)" in result
+
+    def test_strips_trailing_comma_from_text(self) -> None:
+        """Trailing comma (list separator) must not be captured."""
+        text = "10.1234/foo.bar, and"
+        result = detect_dois([], text)
+        assert "10.1234/foo.bar" in result
+        assert "10.1234/foo.bar," not in result
+
+    def test_strips_trailing_colon_from_text(self) -> None:
+        """Trailing colon must not be captured as part of the DOI."""
+        text = "10.1234/foo.bar:"
+        result = detect_dois([], text)
+        assert "10.1234/foo.bar" in result
+        assert "10.1234/foo.bar:" not in result
+
+    def test_strips_trailing_period_from_url(self) -> None:
+        """Trailing period in a URL must be stripped (exercises URL detection path)."""
+        result = detect_dois(["https://doi.org/10.1234/foo.bar."], "")
+        assert "10.1234/foo.bar" in result
+        assert "10.1234/foo.bar." not in result
+
+    def test_strips_trailing_semicolon_from_url(self) -> None:
+        """Trailing semicolon in a URL must be stripped (exercises URL detection path)."""
+        result = detect_dois(["https://doi.org/10.1234/foo.bar;"], "")
+        assert "10.1234/foo.bar" in result
+
+    def test_strips_trailing_comma_from_url(self) -> None:
+        """Trailing comma in a URL must be stripped (exercises URL detection path)."""
+        result = detect_dois(["https://doi.org/10.1234/foo.bar,"], "")
+        assert "10.1234/foo.bar" in result
+
+    def test_strips_trailing_colon_from_url(self) -> None:
+        """Trailing colon in a URL must be stripped (exercises URL detection path)."""
+        result = detect_dois(["https://doi.org/10.1234/foo.bar:"], "")
+        assert "10.1234/foo.bar" in result
+
+    def test_doi_inside_parentheses_sentence(self) -> None:
+        """DOI inside parentheses: trailing ) is sentence punctuation here, not DOI suffix.
+        The regex captures the ) as part of the DOI because ) is in the character class.
+        After _clean_doi stripping (which only strips .;,:), the ) remains.
+        This test documents the current behaviour: 10.1234/foo) is returned as-is."""
+        text = "(see 10.1234/foo)"
+        result = detect_dois([], text)
+        # The regex captures "10.1234/foo)" — _clean_doi does not strip )
+        assert "10.1234/foo)" in result
+
 
 class TestLookupDoi:
     @respx.mock

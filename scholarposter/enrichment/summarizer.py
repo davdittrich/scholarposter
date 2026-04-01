@@ -1,6 +1,7 @@
 """Text summarization backends: Gemini CLI, Ollama, and extractive (sumy)."""
 from __future__ import annotations
 
+import re
 import subprocess
 from math import sqrt
 from typing import Optional
@@ -65,7 +66,11 @@ def summarize_ollama(
         return None
 
 
-def summarize_extractive(text: str, max_sentences: int = 5, timeout: int = 10) -> str:
+def summarize_extractive(
+    text: str,
+    max_sentences: int = 5,
+    max_chars: int = 1000,
+) -> str:
     """Extractive summarization using sumy's KL summarizer.
 
     Ported from m2blusky.py getSummarytext(), with a two-pass reduction for
@@ -90,7 +95,6 @@ def summarize_extractive(text: str, max_sentences: int = 5, timeout: int = 10) -
         for sentence in kl_summ(parser.document, reduced_count):
             if len(str(sentence)) > 40:
                 full_text += str(sentence) + " "
-        import re
         full_text = re.sub(r"\([^()]*\)", "", full_text)
         parser = PlaintextParser.from_string(full_text, Tokenizer(_LANGUAGE))
         sc = len(parser.document.sentences)
@@ -99,14 +103,13 @@ def summarize_extractive(text: str, max_sentences: int = 5, timeout: int = 10) -
     pc = len(parser.document.paragraphs)
     nos = min(max(3, int(0.01 * sc), int(0.05 * pc)), max_sentences)
 
-    import re
     for sentence in lsa_summ(parser.document, nos):
         if len(str(sentence)) > 40:
             full_text += str(sentence) + " "
     full_text = re.sub(r"\([^()]*\)", "", full_text)
 
     # Reduce further if still too long
-    while len(full_text) > 1000:
+    while len(full_text) > max_chars:
         nos -= 1
         if nos == 0:
             break
@@ -115,8 +118,8 @@ def summarize_extractive(text: str, max_sentences: int = 5, timeout: int = 10) -
             full_text += str(sentence) + " "
         full_text = re.sub(r"\([^()]*\)", "", full_text)
 
-    if len(full_text) > 1000:
-        full_text = full_text[:1000] + "\u2026"
+    if len(full_text) > max_chars:
+        full_text = full_text[:max_chars - 1] + "\u2026"
 
     return full_text.strip()
 
@@ -158,7 +161,7 @@ def summarize(
             result = summarize_extractive(
                 text,
                 max_sentences=config.extractive.max_sentences,
-                timeout=config.extractive.timeout_seconds,
+                max_chars=max_chars,
             )
 
         if result:

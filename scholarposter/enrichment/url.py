@@ -9,14 +9,20 @@ import httpx
 
 
 def unshorten_url(url: str, timeout: int = 10, max_redirects: int = 5) -> str:
-    """Follow redirects and return the final URL. Returns original on error."""
+    """Follow redirects via HEAD and return the final URL. Returns original on error.
+
+    Uses HEAD to avoid downloading the full response body. Falls back to GET
+    if the server returns 405 Method Not Allowed.
+    """
     try:
         with httpx.Client(
             follow_redirects=True,
             max_redirects=max_redirects,
             timeout=timeout,
         ) as client:
-            resp = client.get(url)
+            resp = client.head(url)
+            if resp.status_code == 405:
+                resp = client.get(url)
             return str(resp.url)
     except (httpx.TimeoutException, httpx.HTTPError, httpx.TransportError):
         return url

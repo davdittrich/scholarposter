@@ -104,7 +104,14 @@ class EnrichmentPipeline:
             if og.get("description"):
                 updates["description"] = og["description"]
             if og.get("image"):
-                updates["thumbnail_url"] = urljoin(url, og["image"])
+                thumb_url = urljoin(url, og["image"])
+                updates["thumbnail_url"] = thumb_url
+                try:
+                    thumb_bytes = download_media(thumb_url, timeout=10)
+                    if thumb_bytes:
+                        updates["thumbnail_bytes"] = thumb_bytes
+                except Exception:
+                    logger.debug(f"Thumbnail download failed for {thumb_url}")
         except Exception as e:
             logger.warning(f"OG extraction failed: {e}")
 
@@ -164,18 +171,20 @@ class EnrichmentPipeline:
 
     def _enrich_doi(self, link: LinkEnrichment, context_text: str) -> LinkEnrichment:
         """Detect DOI and look up Crossref metadata."""
-        # DOI may already be set by HTML/PDF enrichment; also check context text
-        urls_to_check = [link.resolved_url or link.original_url]
-        try:
-            dois = detect_dois(urls_to_check, context_text)
-        except Exception as e:
-            logger.warning(f"DOI detection failed: {e}")
-            return link
+        if link.doi:
+            # DOI already detected in HTML/PDF stage — skip re-detection
+            doi = link.doi
+        else:
+            urls_to_check = [link.resolved_url or link.original_url]
+            try:
+                dois = detect_dois(urls_to_check, context_text)
+            except Exception as e:
+                logger.warning(f"DOI detection failed: {e}")
+                return link
 
-        if not dois:
-            return link
-
-        doi = link.doi or dois[0]
+            if not dois:
+                return link
+            doi = dois[0]
         cache_key = f"doi:{doi}"
 
         # Check cache first

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import typer
-from dotenv import find_dotenv
+from dotenv import find_dotenv, load_dotenv
 from loguru import logger
 from mastodon import Mastodon
 
@@ -17,7 +17,7 @@ from scholarposter.collector import MastodonCollector
 from scholarposter.config import NotificationBackendConfig, load_config
 from scholarposter.enrichment.pipeline import EnrichmentPipeline
 from scholarposter.filters import evaluate_filters
-from scholarposter.models import PlatformState, PostStatus
+from scholarposter.models import PlatformState, PostResult, PostStatus
 from scholarposter.notifications.base import BaseNotifier
 from scholarposter.notifications.ntfy import NtfyNotifier
 from scholarposter.state import StateManager
@@ -111,6 +111,7 @@ def run(
     quiet: bool = typer.Option(False, "--quiet", help="Suppress INFO logging"),
 ) -> None:
     """Cross-post the oldest unprocessed Mastodon toot to configured platforms."""
+    load_dotenv()
     if platform not in VALID_PLATFORMS:
         typer.echo(f"Invalid platform '{platform}'. Choose from: {', '.join(sorted(VALID_PLATFORMS))}", err=True)
         raise typer.Exit(code=2)
@@ -206,21 +207,33 @@ def run(
 
 
 def _dispatch_post(platform: str, post, plat_cfg, dry_run: bool):
-    """Instantiate adapter and post."""
-    from dotenv import load_dotenv
-    load_dotenv()
-
+    """Instantiate adapter and post. Validates credentials before API calls."""
     if platform == "bluesky":
+        email = os.environ.get("BLUESKY_EMAIL")
+        password = os.environ.get("BLUESKY_PASSWORD")
+        if not email or not password:
+            return PostResult(
+                platform=platform,
+                status=PostStatus.FAILED,
+                error="Missing BLUESKY_EMAIL or BLUESKY_PASSWORD env vars",
+            )
         from atproto import Client
         from scholarposter.adapters.bluesky import BlueskyAdapter
         client = Client()
-        client.login(os.environ.get("BLUESKY_EMAIL", ""), os.environ.get("BLUESKY_PASSWORD", ""))
+        client.login(email, password)
         adapter = BlueskyAdapter(client=client, hashtag_rules=plat_cfg.hashtag_rules)
     elif platform == "linkedin":
+        token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
+        owner = os.environ.get("LINKEDIN_OWNER_URN")
+        if not token or not owner:
+            return PostResult(
+                platform=platform,
+                status=PostStatus.FAILED,
+                error="Missing LINKEDIN_ACCESS_TOKEN or LINKEDIN_OWNER_URN env vars",
+            )
         from scholarposter.adapters.linkedin import LinkedInAdapter
-        adapter = LinkedInAdapter()
+        adapter = LinkedInAdapter(access_token=token, owner_urn=owner)
     else:
-        from scholarposter.models import PostResult, PostStatus
         return PostResult(platform=platform, status=PostStatus.SKIPPED)
 
     return adapter.post(post, dry_run=dry_run)
@@ -262,8 +275,8 @@ def status(
                     pending_counts[plat] = f"{count}+" if count >= 50 else str(count)
                 else:
                     pending_counts[plat] = "?"
-        except Exception:
-            pass  # API unavailable; pending counts remain unknown
+        except Exception as e:
+            logger.debug(f"Could not fetch pending counts: {e}")
 
     for plat, data in state.items():
         pending = pending_counts.get(plat, "?")
@@ -283,6 +296,7 @@ def retry(
     dry_run: bool = typer.Option(False, "--dry-run", help="Simulate posting without making API calls"),
 ) -> None:
     """Retry posting a specific toot to a single platform."""
+    load_dotenv()
     if platform not in {"bluesky", "linkedin"}:
         typer.echo(f"Invalid platform '{platform}'. Choose from: bluesky, linkedin", err=True)
         raise typer.Exit(code=2)

@@ -10,6 +10,16 @@ from bs4 import BeautifulSoup
 # Matches DOI suffix patterns: 10.XXXX/anything
 _DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-.;()/:\w]+")
 
+# Sentence-terminating characters that should be stripped from the end of a DOI
+# match. Note: ) is intentionally excluded because it can legitimately end a
+# DOI suffix (e.g. 10.1000/xyz(2024)).
+_TRAILING_PUNCT = ".;,:"
+
+
+def _clean_doi(raw: str) -> str:
+    """Strip trailing sentence punctuation from a DOI match."""
+    return raw.rstrip(_TRAILING_PUNCT)
+
 
 def detect_dois(urls: list[str], text: str) -> list[str]:
     """Detect DOIs in a list of URLs and a text string.
@@ -21,10 +31,14 @@ def detect_dois(urls: list[str], text: str) -> list[str]:
 
     for url in urls:
         for match in _DOI_PATTERN.finditer(url):
-            found.add(match.group(0))
+            cleaned = _clean_doi(match.group(0))
+            if cleaned:
+                found.add(cleaned)
 
     for match in _DOI_PATTERN.finditer(text):
-        found.add(match.group(0))
+        cleaned = _clean_doi(match.group(0))
+        if cleaned:
+            found.add(cleaned)
 
     return list(found)
 
