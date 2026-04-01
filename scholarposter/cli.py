@@ -116,7 +116,14 @@ def run(
         typer.echo(f"Invalid platform '{platform}'. Choose from: {', '.join(sorted(VALID_PLATFORMS))}", err=True)
         raise typer.Exit(code=2)
 
-    cfg = load_config(config)
+    try:
+        cfg = load_config(config)
+    except FileNotFoundError:
+        typer.echo(f"Config not found: {config}\nCopy config.toml.example to config.toml", err=True)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        typer.echo(f"Config error: {e}", err=True)
+        raise typer.Exit(code=1)
     log_level = "DEBUG" if verbose else ("WARNING" if quiet else cfg.logging.level)
     setup_logging(level=log_level, log_file=cfg.logging.file if not dry_run else None)
 
@@ -183,13 +190,15 @@ def run(
             result = _dispatch_post(plat, post, plat_cfg, dry_run)
 
             # FR-37: set last_posted_at on success; last_error on failure
-            posted_at = datetime.now(timezone.utc) if result.status == PostStatus.POSTED else None
-            state_mgr.update_platform_state(plat, PlatformState(
-                last_toot_id=int(post.source_id),
-                last_status=result.status.value,
-                last_posted_at=posted_at,
-                last_error=result.error,
-            ))
+            # Dry-run: adapter still returns POSTED but we do NOT persist state
+            if not dry_run:
+                posted_at = datetime.now(timezone.utc) if result.status == PostStatus.POSTED else None
+                state_mgr.update_platform_state(plat, PlatformState(
+                    last_toot_id=int(post.source_id),
+                    last_status=result.status.value,
+                    last_posted_at=posted_at,
+                    last_error=result.error,
+                ))
 
             if result.status == PostStatus.POSTED:
                 logger.info(f"[{plat}] Posted {post.source_id}: {result.post_url}")
@@ -217,10 +226,15 @@ def _dispatch_post(platform: str, post, plat_cfg, dry_run: bool):
                 status=PostStatus.FAILED,
                 error="Missing BLUESKY_EMAIL or BLUESKY_PASSWORD env vars",
             )
+        # To add a new platform: add an elif branch here, and register in config.py
         from atproto import Client
         from scholarposter.adapters.bluesky import BlueskyAdapter
         client = Client()
-        client.login(email, password)
+        try:
+            client.login(email, password)
+        except Exception as e:
+            return PostResult(platform=platform, status=PostStatus.FAILED,
+                              error=f"Bluesky login failed: {_redact(str(e))}")
         adapter = BlueskyAdapter(client=client, hashtag_rules=plat_cfg.hashtag_rules)
     elif platform == "linkedin":
         token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
@@ -246,7 +260,8 @@ def status(
     """Show last posted toot ID per platform."""
     try:
         cfg = load_config(config)
-    except Exception:
+    except Exception as e:
+        typer.echo(f"Warning: config load failed ({e}). Showing local state only.", err=True)
         cfg = None
 
     state_file = cfg.state.state_file if cfg else "state.json"
@@ -301,7 +316,14 @@ def retry(
         typer.echo(f"Invalid platform '{platform}'. Choose from: bluesky, linkedin", err=True)
         raise typer.Exit(code=2)
 
-    cfg = load_config(config)
+    try:
+        cfg = load_config(config)
+    except FileNotFoundError:
+        typer.echo(f"Config not found: {config}\nCopy config.toml.example to config.toml", err=True)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        typer.echo(f"Config error: {e}", err=True)
+        raise typer.Exit(code=1)
     setup_logging(level=cfg.logging.level)
     _check_env_permissions()
 
