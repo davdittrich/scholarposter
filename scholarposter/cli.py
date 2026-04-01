@@ -52,17 +52,23 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None,
                    filter=_redact_filter)
 
 
-def _check_env_permissions() -> None:
-    """Warn if .env file is world- or group-readable."""
+def _check_env_permissions(cfg=None) -> None:
+    """Warn if .env or credential files are world- or group-readable."""
+    paths_to_check: list[str] = []
     env_path = find_dotenv()
-    if not env_path:
-        return
-    mode = os.stat(env_path).st_mode
-    if mode & 0o077:
-        logger.warning(
-            f".env file at {env_path} has unsafe permissions "
-            f"(mode {oct(mode & 0o777)}). Recommend: chmod 600 {env_path}"
-        )
+    if env_path:
+        paths_to_check.append(env_path)
+    if cfg:
+        cred = Path(cfg.mastodon.credentials_file)
+        if cred.exists():
+            paths_to_check.append(str(cred))
+    for path in paths_to_check:
+        mode = os.stat(path).st_mode
+        if mode & 0o077:
+            logger.warning(
+                f"{path} has unsafe permissions "
+                f"(mode {oct(mode & 0o777)}). Recommend: chmod 600 {path}"
+            )
 
 
 def _build_notifiers(backends: list[NotificationBackendConfig]) -> list[BaseNotifier]:
@@ -127,7 +133,7 @@ def run(
     log_level = "DEBUG" if verbose else ("WARNING" if quiet else cfg.logging.level)
     setup_logging(level=log_level, log_file=cfg.logging.file if not dry_run else None)
 
-    _check_env_permissions()
+    _check_env_permissions(cfg)
 
     state_mgr = StateManager(
         state_dir=Path("."),
@@ -256,6 +262,8 @@ def _dispatch_post(platform: str, post, plat_cfg, dry_run: bool):
 @app.command()
 def status(
     config: Path = typer.Option(Path("config.toml"), "--config", help="Path to config.toml"),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable DEBUG logging"),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress INFO logging"),
 ) -> None:
     """Show last posted toot ID per platform."""
     try:
@@ -263,6 +271,9 @@ def status(
     except Exception as e:
         typer.echo(f"Warning: config load failed ({e}). Showing local state only.", err=True)
         cfg = None
+
+    log_level = "DEBUG" if verbose else ("WARNING" if quiet else (cfg.logging.level if cfg else "INFO"))
+    setup_logging(level=log_level)
 
     state_file = cfg.state.state_file if cfg else "state.json"
     state_mgr = StateManager(state_file=state_file)
@@ -309,6 +320,8 @@ def retry(
     platform: str = typer.Option(..., "--platform", help="Platform to retry: bluesky or linkedin"),
     toot_id: int = typer.Option(..., "--toot-id", help="Toot ID to retry"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Simulate posting without making API calls"),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable DEBUG logging"),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress INFO logging"),
 ) -> None:
     """Retry posting a specific toot to a single platform."""
     load_dotenv()
@@ -324,8 +337,9 @@ def retry(
     except Exception as e:
         typer.echo(f"Config error: {e}", err=True)
         raise typer.Exit(code=1)
-    setup_logging(level=cfg.logging.level)
-    _check_env_permissions()
+    log_level = "DEBUG" if verbose else ("WARNING" if quiet else cfg.logging.level)
+    setup_logging(level=log_level)
+    _check_env_permissions(cfg)
 
     state_mgr = StateManager(
         state_dir=Path("."),

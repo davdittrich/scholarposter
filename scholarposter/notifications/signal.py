@@ -1,8 +1,6 @@
 """Signal notification backend via signal-cli REST API."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import httpx
 from loguru import logger
 
@@ -16,10 +14,7 @@ class SignalNotifier(BaseNotifier):
         self._recipients = recipients
 
     def notify(self, platform: str, toot_id: str, error: str) -> None:
-        message = (
-            f"[{datetime.now(timezone.utc).isoformat()}] "
-            f"Cross-post to {platform} failed for toot {toot_id}: {error}"
-        )
+        message = self.format_message(platform, toot_id, error)
         try:
             httpx.post(
                 f"{self._api_url}/v2/send",

@@ -664,6 +664,7 @@ class TestStatusCommand:
              patch("scholarposter.cli.StateManager") as mock_sm_cls, \
              patch("scholarposter.cli.Mastodon"):
             mock_cfg.return_value.state.state_file = str(state_file)
+            mock_cfg.return_value.logging.level = "INFO"
             real_state = StateManager(state_file=str(state_file))
             mock_sm_cls.return_value = real_state
 
@@ -689,6 +690,7 @@ class TestStatusCommand:
             patch("scholarposter.cli.Mastodon") as mock_masto_cls,
         ):
             mock_cfg.return_value.state.state_file = str(state_file)
+            mock_cfg.return_value.logging.level = "INFO"
             mock_cfg.return_value.mastodon.credentials_file = "t.secret"
             mock_cfg.return_value.mastodon.instance = "https://fediscience.org"
             mock_sm_cls.return_value = RealSM(state_file=str(state_file))
@@ -716,6 +718,7 @@ class TestStatusCommand:
             patch("scholarposter.cli.Mastodon") as mock_masto_cls,
         ):
             mock_cfg.return_value.state.state_file = str(state_file)
+            mock_cfg.return_value.logging.level = "INFO"
             mock_cfg.return_value.mastodon.credentials_file = "t.secret"
             mock_cfg.return_value.mastodon.instance = "https://fediscience.org"
             mock_sm_cls.return_value = RealSM(state_file=str(state_file))

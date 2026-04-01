@@ -1,7 +1,6 @@
 """ntfy.sh push notification backend."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import httpx
 from loguru import logger
 from scholarposter.notifications.base import BaseNotifier
@@ -14,10 +13,11 @@ class NtfyNotifier(BaseNotifier):
 
     def notify(self, platform: str, toot_id: str, error: str) -> None:
         url = f"{self._server}/{self._topic}"
+        message = self.format_message(platform, toot_id, error)
         try:
             httpx.post(
                 url,
-                content=f"[{datetime.now(timezone.utc).isoformat()}] Cross-post to {platform} failed for toot {toot_id}: {error}".encode(),
+                content=message.encode(),
                 headers={
                     "Title": "scholarposter failure",
                     "Priority": "high",
