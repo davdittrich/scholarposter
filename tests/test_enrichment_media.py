@@ -11,7 +11,6 @@ from PIL import Image
 from scholarposter.enrichment.media import (
     resize_image,
     convert_to_jpeg,
-    probe_video,
     download_media,
 )
 
@@ -87,58 +86,6 @@ class TestConvertToJpeg:
         result = convert_to_jpeg(png_bytes)
         img = Image.open(io.BytesIO(result))
         assert img.mode == "RGB"
-
-
-class TestProbeVideo:
-    def test_returns_dict_with_expected_keys(self) -> None:
-        mock_stream = MagicMock()
-        mock_stream.codec_context.name = "h264"
-        mock_stream.codec_context.width = 1920
-        mock_stream.codec_context.height = 1080
-
-        mock_container = MagicMock()
-        mock_container.duration = 10_000_000  # in av time base units
-        mock_container.streams.video = [mock_stream]
-
-        with patch("av.open", return_value=mock_container):
-            result = probe_video(b"fake video bytes")
-
-        assert result is not None
-        assert "duration" in result
-        assert "codec" in result
-        assert "width" in result
-        assert "height" in result
-
-    def test_returns_correct_values(self) -> None:
-        mock_stream = MagicMock()
-        mock_stream.codec_context.name = "h264"
-        mock_stream.codec_context.width = 1920
-        mock_stream.codec_context.height = 1080
-
-        mock_container = MagicMock()
-        mock_container.duration = 5_000_000
-        mock_container.streams.video = [mock_stream]
-
-        with patch("av.open", return_value=mock_container):
-            result = probe_video(b"fake video bytes")
-
-        assert result is not None
-        assert result["codec"] == "h264"
-        assert result["width"] == 1920
-        assert result["height"] == 1080
-
-    def test_returns_none_on_exception(self) -> None:
-        with patch("av.open", side_effect=Exception("Invalid video")):
-            result = probe_video(b"invalid bytes")
-        assert result is None
-
-    def test_returns_none_for_no_video_streams(self) -> None:
-        mock_container = MagicMock()
-        mock_container.streams.video = []
-
-        with patch("av.open", return_value=mock_container):
-            result = probe_video(b"fake bytes")
-        assert result is None
 
 
 class TestDownloadMedia:

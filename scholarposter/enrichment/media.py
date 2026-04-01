@@ -1,10 +1,9 @@
-"""Media enrichment: image resizing/conversion, video probing, and media download."""
+"""Media enrichment: image resizing/conversion, and media download."""
 from __future__ import annotations
 
 import io
 from typing import Optional
 
-import av
 import httpx
 from PIL import Image
 
@@ -59,28 +58,6 @@ def convert_to_jpeg(img_bytes: bytes) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
     return buf.getvalue()
-
-
-def probe_video(video_bytes: bytes) -> Optional[dict]:
-    """Extract metadata from video bytes using PyAV.
-
-    Returns a dict with keys: duration, codec, width, height.
-    Returns None on any exception or if there are no video streams.
-    """
-    try:
-        container = av.open(io.BytesIO(video_bytes))
-        video_streams = container.streams.video
-        if not video_streams:
-            return None
-        stream = video_streams[0]
-        return {
-            "duration": container.duration,
-            "codec": stream.codec_context.name,
-            "width": stream.codec_context.width,
-            "height": stream.codec_context.height,
-        }
-    except Exception:
-        return None
 
 
 def download_media(url: str, timeout: int = 30) -> Optional[bytes]:
