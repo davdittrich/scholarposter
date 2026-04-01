@@ -57,14 +57,20 @@ def _clean_display_name(name: str) -> str:
 
 
 def _mime_from_attachment(att: dict[str, Any]) -> str:
-    """Guess MIME type from Mastodon media attachment type field."""
+    """Guess MIME type from Mastodon media attachment type field.
+
+    First attempts to detect MIME from the URL extension (remote_url or url).
+    Falls back to a type-based mapping when the URL has no recognisable extension
+    or the guessed MIME does not match the declared attachment type category.
+    """
     atype = att.get("type", "unknown")
-    mapping = {
-        "image": "image/jpeg",
-        "video": "video/mp4",
-        "gifv": "video/mp4",
-        "audio": "audio/mpeg",
-    }
+    url = att.get("remote_url") or att.get("url", "")
+    if url:
+        import mimetypes
+        guessed, _ = mimetypes.guess_type(url)
+        if guessed and guessed.startswith(f"{atype}/"):
+            return guessed
+    mapping = {"image": "image/jpeg", "video": "video/mp4", "gifv": "video/mp4", "audio": "audio/mpeg"}
     return mapping.get(atype, "application/octet-stream")
 
 
@@ -78,6 +84,9 @@ class MastodonCollector:
         """Fetch the oldest unprocessed toot for the given user.
 
         Returns None if the timeline is empty or all toots are already processed.
+
+        Note: Uses limit=50. If backlog exceeds 50, only the 50 newest are fetched.
+        Run frequently to prevent backlog buildup.
         """
         kwargs: dict[str, Any] = {"exclude_replies": True, "limit": 50}
         if since_id is not None:
