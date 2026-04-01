@@ -28,14 +28,22 @@ class EmailNotifier(BaseNotifier):
             f"Cross-post to {platform} failed for toot {toot_id}: {error}"
         )
         try:
-            with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=10) as server:
-                server.ehlo()
-                if self._smtp_port == 587:
-                    server.starttls()
-                user = os.environ.get("SMTP_USER")
-                password = os.environ.get("SMTP_PASSWORD")
-                if user and password:
-                    server.login(user, password)
-                server.send_message(msg)
+            if self._smtp_port == 465:
+                with smtplib.SMTP_SSL(self._smtp_host, self._smtp_port, timeout=10) as server:
+                    self._authenticate_and_send(server, msg)
+            else:
+                with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=10) as server:
+                    server.ehlo()
+                    if server.has_extn("starttls"):
+                        server.starttls()
+                        server.ehlo()  # re-ehlo after STARTTLS per SMTP spec
+                    self._authenticate_and_send(server, msg)
         except Exception as e:
             logger.warning(f"Email notification failed: {e}")
+
+    def _authenticate_and_send(self, server, msg: EmailMessage) -> None:
+        user = os.environ.get("SMTP_USER")
+        password = os.environ.get("SMTP_PASSWORD")
+        if user and password:
+            server.login(user, password)
+        server.send_message(msg)

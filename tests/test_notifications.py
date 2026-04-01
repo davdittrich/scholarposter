@@ -100,6 +100,7 @@ class TestEmailNotifier:
     def test_sends_message(self):
         with patch("scholarposter.notifications.email.smtplib.SMTP") as mock_smtp_cls:
             mock_server = MagicMock()
+            mock_server.has_extn.return_value = False
             mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
             mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
             notifier = EmailNotifier(
@@ -108,18 +109,6 @@ class TestEmailNotifier:
             )
             notifier.notify("bluesky", "123", "API error")
             mock_server.send_message.assert_called_once()
-
-    def test_uses_starttls_on_port_587(self):
-        with patch("scholarposter.notifications.email.smtplib.SMTP") as mock_smtp_cls:
-            mock_server = MagicMock()
-            mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
-            mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
-            notifier = EmailNotifier(
-                smtp_host="smtp.test", smtp_port=587,
-                from_addr="a@b.com", to_addr="c@d.com",
-            )
-            notifier.notify("bluesky", "123", "error")
-            mock_server.starttls.assert_called_once()
 
     def test_failure_does_not_raise(self):
         with patch("scholarposter.notifications.email.smtplib.SMTP",
@@ -130,3 +119,68 @@ class TestEmailNotifier:
             )
             # Should not raise
             notifier.notify("bluesky", "123", "error")
+
+    def test_port_465_uses_smtp_ssl(self):
+        """Port 465 must use SMTP_SSL, not plain SMTP."""
+        with patch("scholarposter.notifications.email.smtplib.SMTP_SSL") as mock_ssl_cls, \
+             patch("scholarposter.notifications.email.smtplib.SMTP") as mock_smtp_cls:
+            mock_server = MagicMock()
+            mock_ssl_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
+            mock_ssl_cls.return_value.__exit__ = MagicMock(return_value=False)
+            notifier = EmailNotifier(
+                smtp_host="smtp.test", smtp_port=465,
+                from_addr="a@b.com", to_addr="c@d.com",
+            )
+            notifier.notify("bluesky", "123", "error")
+            mock_ssl_cls.assert_called_once_with("smtp.test", 465, timeout=10)
+            mock_smtp_cls.assert_not_called()
+            mock_server.send_message.assert_called_once()
+
+    def test_port_587_uses_smtp_with_starttls_when_advertised(self):
+        """Port 587 with STARTTLS advertised: use SMTP, call starttls()."""
+        with patch("scholarposter.notifications.email.smtplib.SMTP") as mock_smtp_cls:
+            mock_server = MagicMock()
+            mock_server.has_extn.return_value = True
+            mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
+            mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
+            notifier = EmailNotifier(
+                smtp_host="smtp.test", smtp_port=587,
+                from_addr="a@b.com", to_addr="c@d.com",
+            )
+            notifier.notify("bluesky", "123", "error")
+            mock_server.has_extn.assert_called_with("starttls")
+            mock_server.starttls.assert_called_once()
+            mock_server.send_message.assert_called_once()
+
+    def test_port_25_skips_starttls_when_not_advertised(self):
+        """Port 25 without STARTTLS advertised: use SMTP, skip starttls()."""
+        with patch("scholarposter.notifications.email.smtplib.SMTP") as mock_smtp_cls:
+            mock_server = MagicMock()
+            mock_server.has_extn.return_value = False
+            mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
+            mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
+            notifier = EmailNotifier(
+                smtp_host="smtp.test", smtp_port=25,
+                from_addr="a@b.com", to_addr="c@d.com",
+            )
+            notifier.notify("bluesky", "123", "error")
+            mock_server.has_extn.assert_called_with("starttls")
+            mock_server.starttls.assert_not_called()
+            mock_server.send_message.assert_called_once()
+
+    def test_ehlo_called_twice_on_starttls_path(self):
+        """ehlo() must be called before and after starttls() per SMTP spec."""
+        with patch("scholarposter.notifications.email.smtplib.SMTP") as mock_smtp_cls:
+            mock_server = MagicMock()
+            mock_server.has_extn.return_value = True
+            mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
+            mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
+            notifier = EmailNotifier(
+                smtp_host="smtp.test", smtp_port=587,
+                from_addr="a@b.com", to_addr="c@d.com",
+            )
+            notifier.notify("bluesky", "123", "error")
+            assert mock_server.ehlo.call_count == 2, (
+                f"Expected ehlo() called twice (before+after STARTTLS), "
+                f"got {mock_server.ehlo.call_count}"
+            )
