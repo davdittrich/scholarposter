@@ -76,7 +76,6 @@ host = "http://localhost:11434"
 timeout_seconds = 30
 
 [enrichment.summarization.extractive]
-algorithm = "kl"
 max_sentences = 5
 timeout_seconds = 10
 
@@ -184,7 +183,6 @@ class TestFullConfig:
         assert s.backend == "gemini"
         assert s.gemini.timeout_seconds == 30
         assert s.ollama.model == "gemma3:9b"
-        assert s.extractive.algorithm == "kl"
 
     def test_notifications_config(self, full_config_file):
         cfg = load_config(full_config_file)
@@ -233,3 +231,35 @@ if_any_hashtag = ["Research", "Science", "Academia"]
         # Even without bluesky platform, default PlatformConfig has empty rules
         for plat_cfg in cfg.platforms.values():
             assert plat_cfg.hashtag_rules == []
+
+
+class TestPlatformConfigValidation:
+    def test_empty_dict_succeeds(self):
+        pc = PlatformConfig.model_validate({})
+        assert pc.enabled is True
+        assert isinstance(pc.filters, FilterConfig)
+
+    def test_enabled_only_succeeds_without_filters_key(self):
+        pc = PlatformConfig.model_validate({"enabled": True})
+        assert pc.enabled is True
+        assert isinstance(pc.filters, FilterConfig)
+        assert pc.filters.skip_hashtags == []
+
+
+class TestSummarizationConfigValidation:
+    def test_invalid_backend_raises_validation_error(self):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            SummarizationConfig(backend="typo")
+
+    def test_valid_backend_gemini(self):
+        s = SummarizationConfig(backend="gemini")
+        assert s.backend == "gemini"
+
+    def test_valid_backend_ollama(self):
+        s = SummarizationConfig(backend="ollama")
+        assert s.backend == "ollama"
+
+    def test_valid_backend_extractive(self):
+        s = SummarizationConfig(backend="extractive")
+        assert s.backend == "extractive"
