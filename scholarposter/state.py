@@ -9,6 +9,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Generator, Optional
 
+from loguru import logger
+
 from scholarposter.models import PlatformState
 
 
@@ -40,6 +42,8 @@ class StateManager:
         self._atomic_write(self._state_path, data)
 
     def update_platform_state(self, platform: str, ps: PlatformState) -> None:
+        if self._lock_fd is None:
+            logger.warning("update_platform_state called without holding lock")
         state = self.load_state()
         entry = state.get(platform, {}).copy()  # preserve existing fields
         if ps.last_toot_id is not None:

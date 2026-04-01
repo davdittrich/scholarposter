@@ -235,6 +235,29 @@ class TestUpdatePlatformStateMerge:
         assert state["bluesky"]["last_posted_at"] == "2024-01-01T00:00:00+00:00"
 
 
+class TestUpdatePlatformStateLockWarning:
+    def test_warning_logged_when_called_without_lock(self, mgr):
+        from loguru import logger
+        messages = []
+        lid = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
+        try:
+            mgr.update_platform_state("bluesky", PlatformState(last_toot_id=1))
+        finally:
+            logger.remove(lid)
+        assert any("without holding lock" in m for m in messages), f"Expected lock warning, got: {messages}"
+
+    def test_no_warning_when_called_with_lock(self, mgr):
+        from loguru import logger
+        messages = []
+        lid = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
+        try:
+            with mgr.lock():
+                mgr.update_platform_state("bluesky", PlatformState(last_toot_id=1))
+        finally:
+            logger.remove(lid)
+        assert not any("without holding lock" in m for m in messages), f"Unexpected lock warning: {messages}"
+
+
 class TestPruneCacheNoWrite:
     """_prune_cache must not call _save_cache when nothing expired."""
 
