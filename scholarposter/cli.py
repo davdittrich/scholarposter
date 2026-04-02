@@ -448,7 +448,5 @@ def _print_masked_config(data: Any, indent: int = 0) -> None:
                         _print_masked_config(value, indent + 1)
                     else:
                         typer.echo(f"{prefix}{bullet}{key}: {value}")
-            elif isinstance(item, list):
-                _print_masked_config(item, indent + 1)
             else:
                 typer.echo(f"{prefix}- {item}")

@@ -1,6 +1,7 @@
 """Mastodon toot fetching and parsing for scholarposter."""
 from __future__ import annotations
 
+import mimetypes
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -66,7 +67,6 @@ def _mime_from_attachment(att: dict[str, Any]) -> str:
     atype = att.get("type", "unknown")
     url = att.get("remote_url") or att.get("url", "")
     if url:
-        import mimetypes
         guessed, _ = mimetypes.guess_type(url)
         if guessed and guessed.startswith(f"{atype}/"):
             return guessed
