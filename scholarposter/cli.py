@@ -383,13 +383,15 @@ def retry(
         result = _dispatch_post(platform, post, plat_cfg, dry_run)
 
         # FR-37: set last_posted_at on success; last_error on failure
-        posted_at = datetime.now(timezone.utc) if result.status == PostStatus.POSTED else None
-        state_mgr.update_platform_state(platform, PlatformState(
-            last_toot_id=int(post.source_id),
-            last_status=result.status.value,
-            last_posted_at=posted_at,
-            last_error=result.error,
-        ))
+        # Dry-run: adapter still returns POSTED but we do NOT persist state
+        if not dry_run:
+            posted_at = datetime.now(timezone.utc) if result.status == PostStatus.POSTED else None
+            state_mgr.update_platform_state(platform, PlatformState(
+                last_toot_id=int(post.source_id),
+                last_status=result.status.value,
+                last_posted_at=posted_at,
+                last_error=result.error,
+            ))
 
         if result.status == PostStatus.POSTED:
             logger.info(f"[{platform}] Retried {post.source_id}: {result.post_url}")
@@ -446,7 +448,5 @@ def _print_masked_config(data: Any, indent: int = 0) -> None:
                         _print_masked_config(value, indent + 1)
                     else:
                         typer.echo(f"{prefix}{bullet}{key}: {value}")
-            elif isinstance(item, list):
-                _print_masked_config(item, indent + 1)
             else:
                 typer.echo(f"{prefix}- {item}")

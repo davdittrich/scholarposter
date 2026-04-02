@@ -78,13 +78,9 @@ class StateManager:
         self._atomic_write(self._cache_path, data)
 
     def cache_get(self, key: str) -> Optional[dict[str, Any]]:
-        self._prune_cache()
-        cache = self._load_cache()
+        cache = self._prune_cache()
         entry = cache.get(key)
         if entry is None:
-            return None
-        expires_at = datetime.fromisoformat(entry["expires_at"])
-        if datetime.now(timezone.utc) > expires_at:
             return None
         return entry["value"]
 
@@ -94,16 +90,14 @@ class StateManager:
         cache[key] = {"value": value, "expires_at": expires_at.isoformat()}
         self._save_cache(cache)
 
-    def _prune_cache(self) -> None:
+    def _prune_cache(self) -> dict[str, Any]:
         cache = self._load_cache()
         now = datetime.now(timezone.utc)
-        pruned = {
-            k: v
-            for k, v in cache.items()
-            if datetime.fromisoformat(v["expires_at"]) > now
-        }
+        pruned = {k: v for k, v in cache.items()
+                  if datetime.fromisoformat(v["expires_at"]) > now}
         if len(pruned) < len(cache):
             self._save_cache(pruned)
+        return pruned
 
     # -------------------------------------------------------------------------
     # Locking
@@ -142,7 +136,7 @@ class StateManager:
 
     def _atomic_write(self, path: Path, data: dict[str, Any]) -> None:
         tmp_path = path.with_suffix(path.suffix + ".tmp")
-        with open(tmp_path, "w") as f:
+        fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2, default=str)
         os.rename(tmp_path, path)
-        os.chmod(path, 0o600)

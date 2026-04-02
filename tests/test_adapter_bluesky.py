@@ -420,6 +420,21 @@ class TestGraphemeLen:
         # First chunk must contain the intact emoji (not a broken orphan)
         assert "👨‍👩‍👧‍👦" in chunks[0]
 
+    def test_chunk_text_single_oversized_word(self):
+        """A single 400-grapheme word with no spaces must be truncated to ≤ 300."""
+        from scholarposter.adapters.bluesky import _grapheme_len
+        word = "a" * 400  # no spaces
+        chunks = chunk_text(word, max_graphemes=300)
+        assert len(chunks) == 1
+        assert _grapheme_len(chunks[0]) <= 300
+
+    def test_chunk_text_single_word_at_limit(self):
+        """A single 300-grapheme word should be returned as-is (no truncation)."""
+        word = "a" * 300
+        chunks = chunk_text(word, max_graphemes=300)
+        assert len(chunks) == 1
+        assert chunks[0] == word
+
     def test_chunk_text_301_graphemes_splits_into_two(self):
         """Text at 301 graphemes must split into 2 chunks."""
         # Use space-separated words so the splitter has word boundaries to cut on

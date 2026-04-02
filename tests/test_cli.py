@@ -976,3 +976,46 @@ class TestStatusBrokenConfig:
         # Warning must be present
         combined = result.output
         assert "warning" in combined.lower() or "config" in combined.lower()
+
+
+# ---------------------------------------------------------------------------
+# WU-1: retry --dry-run must not write state
+# ---------------------------------------------------------------------------
+
+class TestRetryDryRunDoesNotWriteState:
+    """retry --dry-run must not call update_platform_state."""
+
+    def test_retry_dry_run_does_not_write_state(self, tmp_path):
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(_BSKY_TOML)
+
+        mock_post = MagicMock()
+        mock_post.source_id = "999"
+        mock_post.hashtags = []
+
+        with (
+            patch("scholarposter.cli.Mastodon") as mock_mastodon_cls,
+            patch("scholarposter.cli.MastodonCollector") as mock_col_cls,
+            patch("scholarposter.cli.StateManager") as mock_state_cls,
+            patch("scholarposter.cli.EnrichmentPipeline") as mock_pipe_cls,
+            patch("scholarposter.cli._dispatch_post") as mock_dispatch,
+            patch("scholarposter.cli.find_dotenv", return_value=""),
+        ):
+            mock_mastodon_cls.return_value.status.return_value = {}
+            mock_col_cls.return_value._toot_to_unified_post.return_value = mock_post
+            mock_state = MagicMock()
+            mock_state.acquire_lock.return_value = True
+            mock_state_cls.return_value = mock_state
+            mock_pipe_cls.return_value.enrich.return_value = mock_post
+            mock_dispatch.return_value = PostResult(
+                platform="bluesky", status=PostStatus.POSTED, post_url="https://bsky.app/p/1"
+            )
+
+            result = runner.invoke(app, [
+                "retry", "--config", str(config_file),
+                "--platform", "bluesky", "--toot-id", "999",
+                "--dry-run",
+            ])
+
+        assert result.exit_code == 0
+        mock_state.update_platform_state.assert_not_called()

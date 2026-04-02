@@ -6,6 +6,8 @@ from urllib.parse import urljoin
 import httpx
 from loguru import logger
 
+_MAX_HTML_BYTES = 5_000_000
+
 from scholarposter.config import EnrichmentConfig
 from scholarposter.enrichment.doi import detect_dois, lookup_doi
 from scholarposter.enrichment.html import extract_og_tags, extract_body_text
@@ -90,8 +92,17 @@ class EnrichmentPipeline:
     def _enrich_html(self, link: LinkEnrichment, url: str) -> LinkEnrichment:
         """Extract OG tags and body text from an HTML URL."""
         try:
-            resp = httpx.get(url, follow_redirects=True, timeout=10)
-            html = resp.text
+            with httpx.Client(timeout=10, follow_redirects=True) as client:
+                with client.stream("GET", url) as resp:
+                    chunks: list[str] = []
+                    total = 0
+                    for chunk in resp.iter_text(4096):
+                        total += len(chunk.encode("utf-8"))
+                        if total > _MAX_HTML_BYTES:
+                            logger.warning(f"HTML from {url} exceeds {_MAX_HTML_BYTES} bytes, truncating")
+                            break
+                        chunks.append(chunk)
+            html = "".join(chunks)
         except Exception as e:
             logger.warning(f"HTML fetch failed for {url}: {e}")
             return link
