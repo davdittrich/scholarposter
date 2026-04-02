@@ -21,6 +21,13 @@ _MIN_SENTENCES = 3
 _MIN_SENTENCE_CHARS = 40  # Minimum chars to include a sentence in summary
 
 
+def _collect_sentences(sentences, min_chars: int = _MIN_SENTENCE_CHARS) -> str:
+    """Join sentences exceeding min_chars, stripping parenthesized text."""
+    parts = [str(s) for s in sentences if len(str(s)) > min_chars]
+    text = " ".join(parts)
+    return re.sub(r"\([^()]*\)", "", text)
+
+
 def summarize_gemini(text: str, prompt: str, timeout: int) -> Optional[str]:
     """Summarize text using the Gemini CLI subprocess.
 
@@ -94,10 +101,7 @@ def summarize_extractive(
     # Stage 1: reduce very long documents
     if sc > 150:
         reduced_count = max(150, int(150 + sqrt(sc - 150)))
-        for sentence in kl_summ(parser.document, reduced_count):
-            if len(str(sentence)) > _MIN_SENTENCE_CHARS:
-                full_text += str(sentence) + " "
-        full_text = re.sub(r"\([^()]*\)", "", full_text)
+        full_text = _collect_sentences(kl_summ(parser.document, reduced_count))
         parser = PlaintextParser.from_string(full_text, Tokenizer(_LANGUAGE))
         sc = len(parser.document.sentences)
         full_text = ""
@@ -105,20 +109,14 @@ def summarize_extractive(
     pc = len(parser.document.paragraphs)
     nos = min(max(3, int(0.01 * sc), int(0.05 * pc)), max_sentences)
 
-    for sentence in lsa_summ(parser.document, nos):
-        if len(str(sentence)) > _MIN_SENTENCE_CHARS:
-            full_text += str(sentence) + " "
-    full_text = re.sub(r"\([^()]*\)", "", full_text)
+    full_text = _collect_sentences(lsa_summ(parser.document, nos))
 
     # Reduce further if still too long
     while len(full_text) > max_chars:
         nos -= 1
         if nos == 0:
             break
-        full_text = ""
-        for sentence in lsa_summ(parser.document, nos):
-            full_text += str(sentence) + " "
-        full_text = re.sub(r"\([^()]*\)", "", full_text)
+        full_text = _collect_sentences(lsa_summ(parser.document, nos), min_chars=0)
 
     if len(full_text) > max_chars:
         full_text = full_text[:max_chars - 1] + "\u2026"
