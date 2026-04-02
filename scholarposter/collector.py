@@ -36,15 +36,8 @@ def strip_html(html: str) -> str:
 
 
 def extract_urls(text: str) -> list[str]:
-    """Extract unique HTTP/HTTPS URLs from plain text."""
-    found = _URL_RE.findall(text)
-    seen: dict[str, None] = {}
-    result = []
-    for url in found:
-        if url not in seen:
-            seen[url] = None
-            result.append(url)
-    return result
+    """Extract unique HTTP/HTTPS URLs from plain text, preserving order."""
+    return list(dict.fromkeys(_URL_RE.findall(text)))
 
 
 def extract_hashtags(tags: list[dict[str, Any]]) -> list[str]:

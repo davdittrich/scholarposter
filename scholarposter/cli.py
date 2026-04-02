@@ -40,12 +40,13 @@ def _redact(msg: str) -> str:
     return msg
 
 
+def _redact_filter(record: dict[str, Any]) -> bool:
+    record["message"] = _redact(record["message"])
+    return True
+
+
 def setup_logging(level: str = "INFO", log_file: Optional[str] = None,
                   rotation: str = "10 MB", retention: str = "30 days") -> None:
-    def _redact_filter(record: dict[str, Any]) -> bool:
-        record["message"] = _redact(record["message"])
-        return True
-
     logger.remove()
     logger.add(sys.stderr, level=level, filter=_redact_filter)
     if log_file:

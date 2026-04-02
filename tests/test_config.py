@@ -38,8 +38,6 @@ require_hashtags = []
 [platforms.bluesky.media]
 enabled = true
 max_image_size_kb = 950
-max_video_size_mb = 50
-supported_types = ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4"]
 
 [platforms.linkedin]
 enabled = true
@@ -52,8 +50,6 @@ require_hashtags = []
 [platforms.linkedin.media]
 enabled = true
 max_image_size_kb = 5000
-max_video_size_mb = 200
-supported_types = ["image/jpeg", "image/png", "image/gif", "video/mp4"]
 
 [enrichment.crossref]
 enabled = true
@@ -133,7 +129,8 @@ class TestLoadConfig:
     def test_missing_mastodon_section_raises(self, tmp_path):
         p = tmp_path / "bad.toml"
         p.write_text("[logging]\nlevel = 'INFO'\n")
-        with pytest.raises((ValueError, KeyError)):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
             load_config(p)
 
 
