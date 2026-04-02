@@ -8,6 +8,20 @@ from scholarposter.models import UnifiedPost, LinkEnrichment
 from scholarposter.state import StateManager
 
 
+def _mock_html_client(html_text: str):
+    """Build a mock httpx.Client that streams the given HTML text."""
+    mock_stream = MagicMock()
+    mock_stream.iter_text.return_value = [html_text]
+    mock_stream_ctx = MagicMock()
+    mock_stream_ctx.__enter__ = MagicMock(return_value=mock_stream)
+    mock_stream_ctx.__exit__ = MagicMock(return_value=False)
+    mock_client = MagicMock()
+    mock_client.stream.return_value = mock_stream_ctx
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    return mock_client
+
+
 def make_post(urls=None, text="A post", hashtags=None) -> UnifiedPost:
     return UnifiedPost(
         source_id="1",
@@ -47,12 +61,12 @@ class TestEnrichmentPipeline:
 
     def test_url_produces_link_enrichment(self, config, state):
         pipeline = EnrichmentPipeline(config=config, cache=state)
-        mock_response = MagicMock()
-        mock_response.text = "<html><head><title>Test Paper</title></head></html>"
+        html_text = "<html><head><title>Test Paper</title></head></html>"
         with (
             patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/paper"),
             patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
-            patch("scholarposter.enrichment.pipeline.httpx") as mock_httpx,
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client(html_text)),
             patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
                 "title": "Test Paper",
                 "description": "A great paper",
@@ -61,7 +75,6 @@ class TestEnrichmentPipeline:
             patch("scholarposter.enrichment.pipeline.extract_body_text", return_value="Full article text."),
             patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
         ):
-            mock_httpx.get.return_value = mock_response
             post = make_post(urls=["https://example.com/paper"])
             result = pipeline.enrich(post)
             assert len(result.links) == 1
@@ -70,12 +83,11 @@ class TestEnrichmentPipeline:
 
     def test_doi_detected_triggers_lookup(self, config, state):
         pipeline = EnrichmentPipeline(config=config, cache=state)
-        mock_response = MagicMock()
-        mock_response.text = "<html></html>"
         with (
             patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://doi.org/10.1000/test"),
             patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
-            patch("scholarposter.enrichment.pipeline.httpx") as mock_httpx,
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
             patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={"title": None, "description": None, "image": None}),
             patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
             patch("scholarposter.enrichment.pipeline.detect_dois", return_value=["10.1000/test"]),
@@ -85,7 +97,6 @@ class TestEnrichmentPipeline:
                 "authors": ["Jane Researcher"],
             }),
         ):
-            mock_httpx.get.return_value = mock_response
             post = make_post(urls=["https://doi.org/10.1000/test"])
             result = pipeline.enrich(post)
             assert len(result.links) == 1
@@ -106,18 +117,16 @@ class TestEnrichmentPipeline:
         pipeline = EnrichmentPipeline(config=config, cache=state)
         doi = "10.1000/cached"
         state.cache_set(f"doi:{doi}", {"title": "Cached Title", "abstract": "Cached abstract.", "authors": []}, ttl_days=7)
-        mock_response = MagicMock()
-        mock_response.text = "<html></html>"
         with (
             patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://doi.org/10.1000/cached"),
             patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
-            patch("scholarposter.enrichment.pipeline.httpx") as mock_httpx,
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
             patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={"title": None, "description": None, "image": None}),
             patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
             patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[doi]),
             patch("scholarposter.enrichment.pipeline.lookup_doi") as mock_lookup,
         ):
-            mock_httpx.get.return_value = mock_response
             post = make_post(urls=["https://doi.org/10.1000/cached"])
             result = pipeline.enrich(post)
             mock_lookup.assert_not_called()
@@ -143,12 +152,11 @@ class TestThumbnailDownload:
     def test_thumbnail_bytes_set_when_og_image_present(self, config, state):
         """_enrich_html must download thumbnail bytes when OG image is present."""
         pipeline = EnrichmentPipeline(config=config, cache=state)
-        mock_response = MagicMock()
-        mock_response.text = "<html></html>"
         with (
             patch("scholarposter.enrichment.pipeline.unshorten_url", side_effect=lambda u, **kw: u),
             patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
-            patch("scholarposter.enrichment.pipeline.httpx") as mock_httpx,
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
             patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
                 "title": "Paper", "description": None, "image": "https://example.com/thumb.jpg",
             }),
@@ -156,7 +164,6 @@ class TestThumbnailDownload:
             patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
             patch("scholarposter.enrichment.pipeline.download_media", return_value=b"fake-image-bytes") as mock_dl,
         ):
-            mock_httpx.get.return_value = mock_response
             post = make_post(urls=["https://example.com/paper"])
             result = pipeline.enrich(post)
             assert result.links[0].thumbnail_bytes == b"fake-image-bytes"
@@ -165,12 +172,11 @@ class TestThumbnailDownload:
     def test_thumbnail_bytes_none_when_download_fails(self, config, state):
         """_enrich_html gracefully handles thumbnail download failure."""
         pipeline = EnrichmentPipeline(config=config, cache=state)
-        mock_response = MagicMock()
-        mock_response.text = "<html></html>"
         with (
             patch("scholarposter.enrichment.pipeline.unshorten_url", side_effect=lambda u, **kw: u),
             patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
-            patch("scholarposter.enrichment.pipeline.httpx") as mock_httpx,
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
             patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
                 "title": "Paper", "description": None, "image": "https://example.com/thumb.jpg",
             }),
@@ -178,7 +184,6 @@ class TestThumbnailDownload:
             patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
             patch("scholarposter.enrichment.pipeline.download_media", side_effect=Exception("timeout")),
         ):
-            mock_httpx.get.return_value = mock_response
             post = make_post(urls=["https://example.com/paper"])
             result = pipeline.enrich(post)
             assert result.links[0].thumbnail_bytes is None
@@ -226,7 +231,8 @@ class TestUrlJoinResolution:
         with (
             patch("scholarposter.enrichment.pipeline.unshorten_url", side_effect=lambda u, **kw: u),
             patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
-            patch("scholarposter.enrichment.pipeline.httpx.get") as mock_get,
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
             patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
                 "title": "Paper", "image": "/images/thumb.jpg",
             }),
@@ -234,7 +240,6 @@ class TestUrlJoinResolution:
             patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
             patch("scholarposter.enrichment.pipeline.download_media", return_value=b"thumb"),
         ):
-            mock_get.return_value = MagicMock(text="<html></html>")
             post = make_post(urls=["https://example.com/article/123"])
             result = pipeline.enrich(post)
             assert result.links[0].thumbnail_url == "https://example.com/images/thumb.jpg"
@@ -249,7 +254,8 @@ class TestUrlJoinResolution:
         with (
             patch("scholarposter.enrichment.pipeline.unshorten_url", side_effect=lambda u, **kw: u),
             patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
-            patch("scholarposter.enrichment.pipeline.httpx.get") as mock_get,
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
             patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
                 "title": "Paper", "image": "https://cdn.example.com/thumb.jpg",
             }),
@@ -257,7 +263,38 @@ class TestUrlJoinResolution:
             patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
             patch("scholarposter.enrichment.pipeline.download_media", return_value=b"thumb"),
         ):
-            mock_get.return_value = MagicMock(text="<html></html>")
             post = make_post(urls=["https://example.com/article/123"])
             result = pipeline.enrich(post)
             assert result.links[0].thumbnail_url == "https://cdn.example.com/thumb.jpg"
+
+
+class TestHtmlSizeGuard:
+    def test_enrich_html_truncates_oversized_response(self, config, state):
+        """HTML responses exceeding _MAX_HTML_BYTES are truncated without crashing."""
+        from scholarposter.enrichment.pipeline import _MAX_HTML_BYTES
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+
+        # Build a mock client that yields one chunk just over the limit
+        large_chunk = "x" * (_MAX_HTML_BYTES + 1)
+        mock_stream = MagicMock()
+        mock_stream.iter_text.return_value = [large_chunk]
+        mock_stream_ctx = MagicMock()
+        mock_stream_ctx.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream_ctx.__exit__ = MagicMock(return_value=False)
+        mock_client = MagicMock()
+        mock_client.stream.return_value = mock_stream_ctx
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", side_effect=lambda u, **kw: u),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client", return_value=mock_client),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://example.com/paper"])
+            # Must not raise, must return a link
+            result = pipeline.enrich(post)
+            assert len(result.links) == 1
