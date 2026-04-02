@@ -15,8 +15,6 @@ require_hashtags = []  # empty = post all
 [platforms.bluesky.media]
 enabled = true
 max_image_size_kb = 950
-max_video_size_mb = 50
-supported_types = ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4"]
 
 # Prepend a hashtag to Bluesky posts when the toot contains certain hashtags.
 # Multiple rules are allowed — each fires independently.
@@ -39,8 +37,6 @@ require_hashtags = []
 [platforms.linkedin.media]
 enabled = true
 max_image_size_kb = 5000
-max_video_size_mb = 200
-supported_types = ["image/jpeg", "image/png", "image/gif", "video/mp4"]
 
 [enrichment.crossref]
 enabled = true

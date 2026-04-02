@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import Any, Literal, Optional
-from pydantic import BaseModel, model_validator
+from typing import Literal, Optional
+from pydantic import BaseModel
 
 
 class MastodonConfig(BaseModel):
@@ -21,10 +21,6 @@ class FilterConfig(BaseModel):
 class MediaConfig(BaseModel):
     enabled: bool = True
     max_image_size_kb: int = 950
-    max_video_size_mb: int = 50
-    supported_types: list[str] = [
-        "image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4"
-    ]
 
 
 class HashtagRule(BaseModel):
@@ -128,14 +124,6 @@ class ScholarposterConfig(BaseModel):
     notifications: NotificationsConfig = NotificationsConfig()
     logging: LoggingConfig = LoggingConfig()
     state: StateConfig = StateConfig()
-
-    @model_validator(mode="before")
-    @classmethod
-    def require_mastodon(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "mastodon" not in data:
-            raise ValueError("Missing required [mastodon] section in config")
-        return data
-
 
 def load_config(path: Path) -> ScholarposterConfig:
     """Load and validate configuration from a TOML file."""
