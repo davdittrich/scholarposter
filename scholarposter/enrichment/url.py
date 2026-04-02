@@ -13,6 +13,10 @@ def unshorten_url(url: str, timeout: int = 10, max_redirects: int = 5) -> str:
 
     Uses HEAD to avoid downloading the full response body. Falls back to GET
     if the server returns 405 Method Not Allowed.
+
+    NOTE: No private-IP filtering. Toot URLs from untrusted sources may cause
+    requests to RFC 1918 addresses. Acceptable for single-user desktop deployment.
+    If deployed to cloud, add httpx transport hook to reject private IPs.
     """
     try:
         with httpx.Client(

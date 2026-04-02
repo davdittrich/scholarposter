@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -195,6 +196,14 @@ def run(
 
             result = _dispatch_post(plat, post, plat_cfg, dry_run)
 
+            # Retry on transient errors (429, 5xx)
+            for attempt in range(2):
+                if not result.retryable:
+                    break
+                logger.info(f"[{plat}] Retrying ({attempt+1}/2) after transient error")
+                time.sleep(2 ** attempt)
+                result = _dispatch_post(plat, post, plat_cfg, dry_run)
+
             # FR-37: set last_posted_at on success; last_error on failure
             # Dry-run: adapter still returns POSTED but we do NOT persist state
             if not dry_run:
@@ -241,7 +250,7 @@ def _dispatch_post(platform: str, post, plat_cfg, dry_run: bool):
         except Exception as e:
             return PostResult(platform=platform, status=PostStatus.FAILED,
                               error=f"Bluesky login failed: {_redact(str(e))}")
-        adapter = BlueskyAdapter(client=client, hashtag_rules=plat_cfg.hashtag_rules)
+        adapter = BlueskyAdapter(client=client, hashtag_rules=plat_cfg.hashtag_rules, media_config=plat_cfg.media)
     elif platform == "linkedin":
         token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
         owner = os.environ.get("LINKEDIN_OWNER_URN")
@@ -252,7 +261,7 @@ def _dispatch_post(platform: str, post, plat_cfg, dry_run: bool):
                 error="Missing LINKEDIN_ACCESS_TOKEN or LINKEDIN_OWNER_URN env vars",
             )
         from scholarposter.adapters.linkedin import LinkedInAdapter
-        adapter = LinkedInAdapter(access_token=token, owner_urn=owner)
+        adapter = LinkedInAdapter(access_token=token, owner_urn=owner, media_config=plat_cfg.media)
     else:
         return PostResult(platform=platform, status=PostStatus.SKIPPED)
 
