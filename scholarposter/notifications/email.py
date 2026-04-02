@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import smtplib
-from datetime import datetime, timezone
 from email.message import EmailMessage
 
 from loguru import logger
@@ -23,10 +22,7 @@ class EmailNotifier(BaseNotifier):
         msg["Subject"] = f"scholarposter failure: {platform}"
         msg["From"] = self._from_addr
         msg["To"] = self._to_addr
-        msg.set_content(
-            f"[{datetime.now(timezone.utc).isoformat()}] "
-            f"Cross-post to {platform} failed for toot {toot_id}: {error}"
-        )
+        msg.set_content(self.format_message(platform, toot_id, error))
         try:
             if self._smtp_port == 465:
                 with smtplib.SMTP_SSL(self._smtp_host, self._smtp_port, timeout=10) as server:

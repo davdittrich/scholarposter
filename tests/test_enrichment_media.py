@@ -1,4 +1,4 @@
-"""Tests for enrichment/media.py - image resize, convert, video probe, download."""
+"""Tests for enrichment/media.py - image resize, convert, download."""
 from __future__ import annotations
 
 import io
@@ -11,7 +11,6 @@ from PIL import Image
 from scholarposter.enrichment.media import (
     resize_image,
     convert_to_jpeg,
-    probe_video,
     download_media,
 )
 
@@ -40,13 +39,11 @@ class TestResizeImage:
         assert len(result) > 0
 
     def test_output_within_max_size_kb(self) -> None:
-        # Create a larger image and demand it fit under 10 KB
         img_bytes = make_jpeg_bytes(800, 800, quality=95)
         result = resize_image(img_bytes, max_size_kb=10, max_dims=(512, 512))
         assert len(result) <= 10 * 1024
 
     def test_small_image_unchanged_size(self) -> None:
-        """A small image already within limits should still be valid JPEG."""
         img_bytes = make_jpeg_bytes(50, 50, quality=50)
         result = resize_image(img_bytes, max_size_kb=100, max_dims=(512, 512))
         img = Image.open(io.BytesIO(result))
@@ -89,80 +86,67 @@ class TestConvertToJpeg:
         assert img.mode == "RGB"
 
 
-class TestProbeVideo:
-    def test_returns_dict_with_expected_keys(self) -> None:
-        mock_stream = MagicMock()
-        mock_stream.codec_context.name = "h264"
-        mock_stream.codec_context.width = 1920
-        mock_stream.codec_context.height = 1080
-
-        mock_container = MagicMock()
-        mock_container.duration = 10_000_000  # in av time base units
-        mock_container.streams.video = [mock_stream]
-
-        with patch("av.open", return_value=mock_container):
-            result = probe_video(b"fake video bytes")
-
-        assert result is not None
-        assert "duration" in result
-        assert "codec" in result
-        assert "width" in result
-        assert "height" in result
-
-    def test_returns_correct_values(self) -> None:
-        mock_stream = MagicMock()
-        mock_stream.codec_context.name = "h264"
-        mock_stream.codec_context.width = 1920
-        mock_stream.codec_context.height = 1080
-
-        mock_container = MagicMock()
-        mock_container.duration = 5_000_000
-        mock_container.streams.video = [mock_stream]
-
-        with patch("av.open", return_value=mock_container):
-            result = probe_video(b"fake video bytes")
-
-        assert result is not None
-        assert result["codec"] == "h264"
-        assert result["width"] == 1920
-        assert result["height"] == 1080
-
-    def test_returns_none_on_exception(self) -> None:
-        with patch("av.open", side_effect=Exception("Invalid video")):
-            result = probe_video(b"invalid bytes")
-        assert result is None
-
-    def test_returns_none_for_no_video_streams(self) -> None:
-        mock_container = MagicMock()
-        mock_container.streams.video = []
-
-        with patch("av.open", return_value=mock_container):
-            result = probe_video(b"fake bytes")
-        assert result is None
-
-
 class TestDownloadMedia:
     def test_returns_bytes_on_success(self) -> None:
-        mock_response = MagicMock()
-        mock_response.content = b"media data"
-        with patch("httpx.get", return_value=mock_response):
+        mock_client = MagicMock()
+        mock_head_resp = MagicMock()
+        mock_head_resp.headers = {"content-length": "10"}
+        mock_get_resp = MagicMock()
+        mock_get_resp.content = b"media data"
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.head.return_value = mock_head_resp
+        mock_client.get.return_value = mock_get_resp
+        with patch("scholarposter.enrichment.media.httpx.Client", return_value=mock_client):
             result = download_media("https://example.com/image.jpg", timeout=10)
         assert result == b"media data"
 
     def test_returns_none_on_timeout(self) -> None:
-        with patch("httpx.get", side_effect=httpx.TimeoutException("timeout")):
+        with patch("scholarposter.enrichment.media.httpx.Client", side_effect=httpx.TimeoutException("timeout")):
             result = download_media("https://example.com/image.jpg", timeout=10)
         assert result is None
 
     def test_returns_none_on_http_error(self) -> None:
-        with patch("httpx.get", side_effect=httpx.HTTPError("error")):
+        with patch("scholarposter.enrichment.media.httpx.Client", side_effect=httpx.HTTPError("error")):
             result = download_media("https://example.com/image.jpg", timeout=10)
         assert result is None
 
-    def test_calls_with_follow_redirects(self) -> None:
-        mock_response = MagicMock()
-        mock_response.content = b"data"
-        with patch("httpx.get", return_value=mock_response) as mock_get:
-            download_media("https://example.com/image.jpg", timeout=10)
-        call_kwargs = mock_get.call_args[1]
-        assert call_kwargs.get("follow_redirects") is True
+    def test_returns_none_when_content_length_exceeds_max(self) -> None:
+        mock_client = MagicMock()
+        mock_head_resp = MagicMock()
+        mock_head_resp.headers = {"content-length": "999999999"}
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.head.return_value = mock_head_resp
+        with patch("scholarposter.enrichment.media.httpx.Client", return_value=mock_client):
+            result = download_media("https://example.com/huge.pdf", max_bytes=1000)
+        assert result is None
+        mock_client.get.assert_not_called()
+
+    def test_returns_none_when_body_exceeds_max(self) -> None:
+        mock_client = MagicMock()
+        mock_head_resp = MagicMock()
+        mock_head_resp.headers = {}  # No Content-Length
+        mock_get_resp = MagicMock()
+        mock_get_resp.content = b"x" * 2000
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.head.return_value = mock_head_resp
+        mock_client.get.return_value = mock_get_resp
+        with patch("scholarposter.enrichment.media.httpx.Client", return_value=mock_client):
+            result = download_media("https://example.com/data", max_bytes=1000)
+        assert result is None
+
+    def test_proceeds_when_no_content_length(self) -> None:
+        mock_client = MagicMock()
+        mock_head_resp = MagicMock()
+        mock_head_resp.headers = {}  # No Content-Length
+        mock_get_resp = MagicMock()
+        mock_get_resp.content = b"small data"
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.head.return_value = mock_head_resp
+        mock_client.get.return_value = mock_get_resp
+        with patch("scholarposter.enrichment.media.httpx.Client", return_value=mock_client):
+            result = download_media("https://example.com/data", max_bytes=50_000_000)
+        assert result == b"small data"

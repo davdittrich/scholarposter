@@ -12,7 +12,7 @@ from atproto import models
 from loguru import logger
 
 from scholarposter.adapters.base import BaseAdapter
-from scholarposter.config import HashtagRule
+from scholarposter.config import HashtagRule, MediaConfig
 from scholarposter.enrichment.media import convert_to_jpeg, download_media, resize_image
 from scholarposter.filters import apply_hashtag_rules
 from scholarposter.models import PostResult, PostStatus, UnifiedPost
@@ -158,9 +158,11 @@ def _build_facets(text: str, client: Any) -> list[dict[str, Any]]:
 
 
 class BlueskyAdapter(BaseAdapter):
-    def __init__(self, client: Any, hashtag_rules: Optional[list[HashtagRule]] = None):
+    def __init__(self, client: Any, hashtag_rules: Optional[list[HashtagRule]] = None,
+                 media_config: Optional[MediaConfig] = None):
         self._client = client
         self._hashtag_rules: list[HashtagRule] = hashtag_rules or []
+        self._media_cfg: MediaConfig = media_config or MediaConfig()
 
     @property
     def platform_name(self) -> str:
@@ -169,6 +171,13 @@ class BlueskyAdapter(BaseAdapter):
     def post(self, unified_post: UnifiedPost, dry_run: bool = False) -> PostResult:
         """Post a UnifiedPost to Bluesky, threading if needed."""
         text = apply_hashtag_rules(unified_post.text, unified_post.hashtags, self._hashtag_rules)
+
+        # Append first link summary if it fits within the grapheme limit
+        if unified_post.links and unified_post.links[0].summary:
+            combined = text + "\n\n" + unified_post.links[0].summary
+            if _grapheme_len(combined) <= MAX_GRAPHEMES:
+                text = combined
+
         chunks = chunk_text(text)
 
         if dry_run:
@@ -242,6 +251,8 @@ class BlueskyAdapter(BaseAdapter):
 
     def _build_embed(self, post: UnifiedPost) -> Optional[Any]:
         """Build an image embed or link card embed for the post."""
+        if not self._media_cfg.enabled:
+            return None
         if post.media:
             images = []
             for att in post.media:
@@ -252,7 +263,7 @@ class BlueskyAdapter(BaseAdapter):
                     # Detect WebP via magic bytes (att.mime_type is always "image/jpeg")
                     if img_bytes[:4] == b"RIFF" and img_bytes[8:12] == b"WEBP":
                         img_bytes = convert_to_jpeg(img_bytes)
-                    img_bytes = resize_image(img_bytes, max_size_kb=950, max_dims=(2048, 2048))
+                    img_bytes = resize_image(img_bytes, max_size_kb=self._media_cfg.max_image_size_kb, max_dims=(2048, 2048))
                     upload = self._client.com.atproto.repo.upload_blob(img_bytes)
                     images.append(
                         models.AppBskyEmbedImages.Image(

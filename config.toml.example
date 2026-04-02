@@ -63,7 +63,6 @@ host = "http://localhost:11434"
 timeout_seconds = 30
 
 [enrichment.summarization.extractive]
-algorithm = "kl"
 max_sentences = 5
 timeout_seconds = 10
 

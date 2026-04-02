@@ -37,6 +37,8 @@ def evaluate_filters(post: UnifiedPost, cfg: FilterConfig) -> FilterResult:
             return FilterResult(passed=False, reason="skip_content_type: poll")
         if "media_only" in cfg.skip_content_types and post.is_media_only:
             return FilterResult(passed=False, reason="skip_content_type: media_only")
+        if "reblog" in cfg.skip_content_types and post.is_reblog:
+            return FilterResult(passed=False, reason="skip_content_type: reblog")
 
     # require_hashtags check (at least one must match; empty = post all)
     if cfg.require_hashtags:

@@ -184,3 +184,121 @@ class TestEmailNotifier:
                 f"Expected ehlo() called twice (before+after STARTTLS), "
                 f"got {mock_server.ehlo.call_count}"
             )
+
+
+# ---------------------------------------------------------------------------
+# New tests for WU-6: format_message consolidation + _check_env_permissions
+# ---------------------------------------------------------------------------
+
+import re
+import os
+import tempfile
+import stat
+from pathlib import Path
+from unittest.mock import MagicMock
+from scholarposter.notifications.base import BaseNotifier
+
+
+class TestFormatMessageConsistency:
+    """All three backends must produce identical message format via format_message."""
+
+    PLATFORM = "bluesky"
+    TOOT_ID = "998877"
+    ERROR = "rate limited"
+
+    _ISO_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+
+    def _assert_format(self, notifier: BaseNotifier) -> None:
+        msg = notifier.format_message(self.PLATFORM, self.TOOT_ID, self.ERROR)
+        assert self._ISO_RE.search(msg), f"No ISO timestamp in: {msg!r}"
+        assert self.PLATFORM in msg
+        assert self.TOOT_ID in msg
+        assert self.ERROR in msg
+
+    def test_ntfy_format_message(self):
+        self._assert_format(NtfyNotifier(topic="t"))
+
+    def test_signal_format_message(self):
+        self._assert_format(
+            SignalNotifier(
+                api_url="http://localhost:8080",
+                phone_number="+1",
+                recipients=["+2"],
+            )
+        )
+
+    def test_email_format_message(self):
+        self._assert_format(
+            EmailNotifier(
+                smtp_host="h", smtp_port=587,
+                from_addr="a@b.com", to_addr="c@d.com",
+            )
+        )
+
+    @respx.mock
+    def test_ntfy_uses_format_message_in_notify(self):
+        """notify() body must match format_message() output exactly."""
+        respx.post("https://ntfy.sh/t").mock(return_value=httpx.Response(200))
+        notifier = NtfyNotifier(topic="t")
+        notifier.notify(self.PLATFORM, self.TOOT_ID, self.ERROR)
+        body = respx.calls.last.request.content.decode()
+        assert self.PLATFORM in body
+        assert self.TOOT_ID in body
+        assert self.ERROR in body
+        assert self._ISO_RE.search(body)
+
+    @respx.mock
+    def test_signal_uses_format_message_in_notify(self):
+        """notify() JSON message must match format_message() output."""
+        import json
+        respx.post("http://localhost:8080/v2/send").mock(return_value=httpx.Response(200))
+        notifier = SignalNotifier(
+            api_url="http://localhost:8080",
+            phone_number="+1",
+            recipients=["+2"],
+        )
+        notifier.notify(self.PLATFORM, self.TOOT_ID, self.ERROR)
+        body = json.loads(respx.calls.last.request.content.decode())
+        assert self.PLATFORM in body["message"]
+        assert self.TOOT_ID in body["message"]
+        assert self._ISO_RE.search(body["message"])
+
+
+class TestCheckEnvPermissions:
+    """_check_env_permissions warns on unsafe credentials file; silent on missing."""
+
+    def _make_cfg(self, cred_path: str):
+        cfg = MagicMock()
+        cfg.mastodon.credentials_file = cred_path
+        return cfg
+
+    def test_warns_on_world_readable_credentials(self, tmp_path):
+        from scholarposter.cli import _check_env_permissions
+        cred = tmp_path / "client.secret"
+        cred.write_text("secret")
+        cred.chmod(0o644)
+
+        messages = []
+        from loguru import logger
+        logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
+
+        with patch("scholarposter.cli.find_dotenv", return_value=""):
+            _check_env_permissions(self._make_cfg(str(cred)))
+
+        assert any("unsafe permissions" in m for m in messages), (
+            f"Expected 'unsafe permissions' warning, got: {messages}"
+        )
+
+    def test_missing_credentials_file_no_error(self, tmp_path):
+        from scholarposter.cli import _check_env_permissions
+        missing = str(tmp_path / "does_not_exist.secret")
+
+        with patch("scholarposter.cli.find_dotenv", return_value=""):
+            # Should not raise
+            _check_env_permissions(self._make_cfg(missing))
+
+    def test_no_cfg_no_error(self):
+        from scholarposter.cli import _check_env_permissions
+        with patch("scholarposter.cli.find_dotenv", return_value=""):
+            # Should not raise
+            _check_env_permissions(None)

@@ -3,7 +3,7 @@ import json
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from scholarposter.collector import MastodonCollector, strip_html, extract_urls, extract_hashtags, _clean_display_name
+from scholarposter.collector import MastodonCollector, strip_html, extract_urls, extract_hashtags, _clean_display_name, _mime_from_attachment
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -157,3 +157,38 @@ class TestTootToUnifiedPost:
         assert post.is_reblog is True
         assert post.original_author is not None
         assert "Jane" in post.original_author or "researcher" in post.original_author.lower()
+
+
+class TestMimeFromAttachment:
+    def test_png_url_returns_image_png(self):
+        att = {"type": "image", "url": "https://example.com/photo.png"}
+        assert _mime_from_attachment(att) == "image/png"
+
+    def test_gif_url_returns_image_gif(self):
+        att = {"type": "image", "url": "https://example.com/anim.gif"}
+        assert _mime_from_attachment(att) == "image/gif"
+
+    def test_no_url_falls_back_to_jpeg(self):
+        att = {"type": "image"}
+        assert _mime_from_attachment(att) == "image/jpeg"
+
+    def test_unknown_extension_falls_back_to_type_mapping(self):
+        att = {"type": "image", "url": "https://example.com/photo.unknownext"}
+        assert _mime_from_attachment(att) == "image/jpeg"
+
+    def test_remote_url_used_for_mime_detection(self):
+        att = {"type": "image", "remote_url": "https://cdn.example.com/pic.png", "url": ""}
+        assert _mime_from_attachment(att) == "image/png"
+
+    def test_video_mp4_url(self):
+        att = {"type": "video", "url": "https://example.com/clip.mp4"}
+        assert _mime_from_attachment(att) == "video/mp4"
+
+    def test_image_type_mismatch_falls_back(self):
+        # A video URL for an "image" type attachment should not return video/mp4
+        att = {"type": "image", "url": "https://example.com/clip.mp4"}
+        assert _mime_from_attachment(att) == "image/jpeg"
+
+    def test_unknown_type_no_url_returns_octet_stream(self):
+        att = {"type": "unknown_type"}
+        assert _mime_from_attachment(att) == "application/octet-stream"

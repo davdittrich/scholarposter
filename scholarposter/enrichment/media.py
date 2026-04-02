@@ -1,10 +1,9 @@
-"""Media enrichment: image resizing/conversion, video probing, and media download."""
+"""Media enrichment: image resizing/conversion, and media download."""
 from __future__ import annotations
 
 import io
 from typing import Optional
 
-import av
 import httpx
 from PIL import Image
 
@@ -61,35 +60,25 @@ def convert_to_jpeg(img_bytes: bytes) -> bytes:
     return buf.getvalue()
 
 
-def probe_video(video_bytes: bytes) -> Optional[dict]:
-    """Extract metadata from video bytes using PyAV.
-
-    Returns a dict with keys: duration, codec, width, height.
-    Returns None on any exception or if there are no video streams.
-    """
-    try:
-        container = av.open(io.BytesIO(video_bytes))
-        video_streams = container.streams.video
-        if not video_streams:
-            return None
-        stream = video_streams[0]
-        return {
-            "duration": container.duration,
-            "codec": stream.codec_context.name,
-            "width": stream.codec_context.width,
-            "height": stream.codec_context.height,
-        }
-    except Exception:
-        return None
-
-
-def download_media(url: str, timeout: int = 30) -> Optional[bytes]:
+def download_media(url: str, timeout: int = 30, max_bytes: int = 50_000_000) -> Optional[bytes]:
     """Download media from a URL and return the raw bytes.
 
-    Returns None on timeout or any HTTP error.
+    Checks Content-Length via HEAD before downloading. Discards responses
+    exceeding max_bytes (default 50MB). Returns None on timeout or error.
     """
     try:
-        response = httpx.get(url, follow_redirects=True, timeout=timeout)
-        return response.content
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            # HEAD check for Content-Length before downloading
+            try:
+                head = client.head(url)
+                cl = int(head.headers.get("content-length", 0))
+                if cl > max_bytes:
+                    return None
+            except (httpx.HTTPError, ValueError):
+                pass  # HEAD failed or no Content-Length; proceed with GET
+            response = client.get(url)
+            if len(response.content) > max_bytes:
+                return None
+            return response.content
     except (httpx.TimeoutException, httpx.HTTPError, Exception):
         return None

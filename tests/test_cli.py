@@ -664,6 +664,7 @@ class TestStatusCommand:
              patch("scholarposter.cli.StateManager") as mock_sm_cls, \
              patch("scholarposter.cli.Mastodon"):
             mock_cfg.return_value.state.state_file = str(state_file)
+            mock_cfg.return_value.logging.level = "INFO"
             real_state = StateManager(state_file=str(state_file))
             mock_sm_cls.return_value = real_state
 
@@ -689,6 +690,7 @@ class TestStatusCommand:
             patch("scholarposter.cli.Mastodon") as mock_masto_cls,
         ):
             mock_cfg.return_value.state.state_file = str(state_file)
+            mock_cfg.return_value.logging.level = "INFO"
             mock_cfg.return_value.mastodon.credentials_file = "t.secret"
             mock_cfg.return_value.mastodon.instance = "https://fediscience.org"
             mock_sm_cls.return_value = RealSM(state_file=str(state_file))
@@ -716,6 +718,7 @@ class TestStatusCommand:
             patch("scholarposter.cli.Mastodon") as mock_masto_cls,
         ):
             mock_cfg.return_value.state.state_file = str(state_file)
+            mock_cfg.return_value.logging.level = "INFO"
             mock_cfg.return_value.mastodon.credentials_file = "t.secret"
             mock_cfg.return_value.mastodon.instance = "https://fediscience.org"
             mock_sm_cls.return_value = RealSM(state_file=str(state_file))
@@ -818,3 +821,158 @@ class TestRetryLockRelease:
             ])
         ps_arg = mock_state.update_platform_state.call_args[0][1]
         assert ps_arg.last_posted_at is not None
+
+
+# ---------------------------------------------------------------------------
+# WU-1: Critical CLI Fixes
+# ---------------------------------------------------------------------------
+
+class TestDryRunDoesNotAdvanceState:
+    """--dry-run must not persist state (update_platform_state must not be called)."""
+
+    def test_dry_run_does_not_call_update_platform_state(self, tmp_path):
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(_BSKY_TOML)
+
+        mock_post = MagicMock()
+        mock_post.source_id = "42"
+        mock_post.hashtags = []
+
+        with (
+            patch("scholarposter.cli.Mastodon"),
+            patch("scholarposter.cli.MastodonCollector") as mock_col_cls,
+            patch("scholarposter.cli.StateManager") as mock_state_cls,
+            patch("scholarposter.cli.EnrichmentPipeline") as mock_pipe_cls,
+            patch("scholarposter.cli.evaluate_filters") as mock_filter,
+            patch("scholarposter.cli._dispatch_post") as mock_dispatch,
+            patch("scholarposter.cli.find_dotenv", return_value=""),
+        ):
+            mock_state = MagicMock()
+            mock_state.acquire_lock.return_value = True
+            mock_state.get_since_id.return_value = None
+            mock_state_cls.return_value = mock_state
+
+            mock_col_cls.return_value.fetch_oldest_unprocessed.return_value = mock_post
+            mock_pipe_cls.return_value.enrich.return_value = mock_post
+            mock_filter.return_value = MagicMock(passed=True)
+            mock_dispatch.return_value = PostResult(
+                platform="bluesky", status=PostStatus.POSTED
+            )
+
+            result = runner.invoke(
+                app, ["run", "--dry-run", "--config", str(config_file)]
+            )
+
+        assert result.exit_code == 0
+        mock_state.update_platform_state.assert_not_called()
+
+
+class TestBlueskyLoginFailure:
+    """Bluesky login failure must return PostResult(FAILED), not raise an exception."""
+
+    def test_login_failure_returns_failed_result(self):
+        from scholarposter.cli import _dispatch_post
+
+        mock_post = MagicMock()
+        plat_cfg = MagicMock()
+        plat_cfg.hashtag_rules = []
+
+        mock_client = MagicMock()
+        mock_client.login.side_effect = Exception("Invalid identifier or password")
+
+        with (
+            patch.dict(os.environ, {"BLUESKY_EMAIL": "u@example.com", "BLUESKY_PASSWORD": "pw"}),
+            patch("atproto.Client", return_value=mock_client),
+        ):
+            result = _dispatch_post("bluesky", mock_post, plat_cfg, False)
+
+        assert result.status == PostStatus.FAILED
+        assert result.error is not None
+        assert "login" in result.error.lower() or "bluesky" in result.error.lower()
+
+    def test_login_failure_does_not_raise(self):
+        """_dispatch_post must not propagate login exceptions."""
+        from scholarposter.cli import _dispatch_post
+
+        mock_post = MagicMock()
+        plat_cfg = MagicMock()
+        plat_cfg.hashtag_rules = []
+
+        mock_client = MagicMock()
+        mock_client.login.side_effect = RuntimeError("connection refused")
+
+        with (
+            patch.dict(os.environ, {"BLUESKY_EMAIL": "u@x.com", "BLUESKY_PASSWORD": "p"}),
+            patch("atproto.Client", return_value=mock_client),
+        ):
+            result = _dispatch_post("bluesky", mock_post, plat_cfg, False)
+
+        assert result.status == PostStatus.FAILED
+
+
+class TestConfigLoadErrors:
+    """Missing or malformed config must exit 1 with a message on stderr."""
+
+    def test_missing_config_exits_1(self, tmp_path):
+        missing = tmp_path / "no_such_config.toml"
+        with patch("scholarposter.cli.find_dotenv", return_value=""):
+            result = runner.invoke(app, ["run", "--config", str(missing)])
+        assert result.exit_code == 1
+        combined = result.output or ""
+        assert "not found" in combined.lower() or "config" in combined.lower()
+
+    def test_malformed_config_exits_1(self, tmp_path):
+        bad_config = tmp_path / "bad.toml"
+        bad_config.write_text("[[invalid toml ]] THIS IS NOT VALID TOML %%% @@@")
+        with patch("scholarposter.cli.find_dotenv", return_value=""):
+            result = runner.invoke(app, ["run", "--config", str(bad_config)])
+        assert result.exit_code == 1
+
+    def test_retry_missing_config_exits_1(self, tmp_path):
+        missing = tmp_path / "no_config.toml"
+        with patch("scholarposter.cli.find_dotenv", return_value=""):
+            result = runner.invoke(app, [
+                "retry", "--config", str(missing),
+                "--platform", "bluesky", "--toot-id", "99",
+            ])
+        assert result.exit_code == 1
+
+    def test_retry_malformed_config_exits_1(self, tmp_path):
+        bad_config = tmp_path / "bad.toml"
+        bad_config.write_text("THIS IS NOT TOML @ # $")
+        with patch("scholarposter.cli.find_dotenv", return_value=""):
+            result = runner.invoke(app, [
+                "retry", "--config", str(bad_config),
+                "--platform", "bluesky", "--toot-id", "99",
+            ])
+        assert result.exit_code == 1
+
+
+class TestStatusBrokenConfig:
+    """status with a broken config must warn on stderr but still show local state."""
+
+    def test_status_broken_config_warns_and_shows_state(self, tmp_path):
+        from scholarposter.state import StateManager as RealSM
+        from scholarposter.models import PlatformState
+
+        state_file = tmp_path / "state.json"
+        sm = RealSM(state_file=str(state_file))
+        sm.update_platform_state("bluesky", PlatformState(
+            last_toot_id=77, last_status="posted",
+        ))
+
+        with (
+            patch("scholarposter.cli.load_config", side_effect=Exception("parse error")),
+            patch("scholarposter.cli.StateManager") as mock_sm_cls,
+        ):
+            mock_sm_cls.return_value = RealSM(state_file=str(state_file))
+            missing = tmp_path / "missing.toml"
+            result = runner.invoke(app, ["status", "--config", str(missing)])
+
+        # Should not crash
+        assert result.exit_code == 0
+        # State must be shown
+        assert "bluesky" in result.output
+        # Warning must be present
+        combined = result.output
+        assert "warning" in combined.lower() or "config" in combined.lower()

@@ -219,3 +219,24 @@ class TestApplyHashtagRules:
         rules = [HashtagRule(add_hashtag="EconSky", if_any_hashtag=[])]
         result = apply_hashtag_rules("text", ["Economics"], rules)
         assert result == "text"
+
+
+class TestReblogFilter:
+    def test_reblog_filtered_when_configured(self):
+        post = make_post(is_reblog=True)
+        cfg = FilterConfig(skip_content_types=["reblog"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+        assert "reblog" in result.reason
+
+    def test_non_reblog_passes_when_reblog_configured(self):
+        post = make_post(is_reblog=False)
+        cfg = FilterConfig(skip_content_types=["reblog"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is True
+
+    def test_reblog_not_filtered_when_not_configured(self):
+        post = make_post(is_reblog=True)
+        cfg = FilterConfig(skip_content_types=[])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is True

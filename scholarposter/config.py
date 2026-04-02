@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, model_validator
 
 
@@ -39,18 +39,6 @@ class PlatformConfig(BaseModel):
     media: MediaConfig = MediaConfig()
     hashtag_rules: list[HashtagRule] = []
 
-    @model_validator(mode="before")
-    @classmethod
-    def parse_nested(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            if "filters" not in data:
-                data = dict(data, filters={})
-            if "media" not in data:
-                data = dict(data, media={})
-            if "hashtag_rules" not in data:
-                data = dict(data, hashtag_rules=[])
-        return data
-
 
 class GeminiSummarizationConfig(BaseModel):
     timeout_seconds: int = 30
@@ -63,14 +51,13 @@ class OllamaSummarizationConfig(BaseModel):
 
 
 class ExtractiveSummarizationConfig(BaseModel):
-    algorithm: str = "kl"
     max_sentences: int = 5
     timeout_seconds: int = 10
 
 
 class SummarizationConfig(BaseModel):
     enabled: bool = True
-    backend: str = "extractive"
+    backend: Literal["gemini", "ollama", "extractive"] = "extractive"
     max_chars: int = 500
     prompt: str = (
         "Summarize this academic paper/article in 2-3 sentences for a social media post. "

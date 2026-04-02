@@ -7,6 +7,7 @@ from math import sqrt
 from typing import Optional
 
 import httpx
+from loguru import logger
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.summarizers.kl import KLSummarizer
@@ -142,7 +143,9 @@ def summarize(
     # Try backends in order starting from the preferred one
     backend_order = _build_backend_order(backend)
 
-    for b in backend_order:
+    for i, b in enumerate(backend_order):
+        if i > 0:
+            logger.warning(f"Summarizer: falling back to {b}")
         if b == "gemini":
             result = summarize_gemini(
                 text,
@@ -165,6 +168,7 @@ def summarize(
             )
 
         if result:
+            logger.debug(f"Summarizer: {b} produced {len(result)} chars")
             break
 
     if not result:

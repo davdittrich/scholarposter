@@ -22,8 +22,6 @@ dependencies = [
     "trafilatura",
     "PyMuPDF",
     "pymupdf4llm",
-    "av",
-    "tomli-w",
     "grapheme>=0.6",
 ]
 
