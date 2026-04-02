@@ -267,3 +267,14 @@ class TestPruneCacheNoWrite:
         with patch.object(mgr, "_save_cache") as mock_save:
             mgr._prune_cache()
             mock_save.assert_not_called()
+
+
+class TestCacheGetSingleLoad:
+    """cache_get must load the cache only once (via _prune_cache)."""
+
+    def test_cache_get_single_file_read(self, mgr):
+        mgr.cache_set("k", {"v": 1}, ttl_days=7)
+        with patch.object(mgr, "_load_cache", wraps=mgr._load_cache) as mock_load:
+            mgr.cache_get("k")
+        # _prune_cache calls _load_cache once; cache_get must not add a second call
+        mock_load.assert_called_once()

@@ -194,6 +194,25 @@ class TestSummarize:
         assert result == "ollama summary"
 
 
+class TestBuildBackendOrder:
+    """Tests for _build_backend_order (no wrap-around behavior)."""
+
+    def test_build_backend_order_ollama_no_gemini(self) -> None:
+        from scholarposter.enrichment.summarizer import _build_backend_order
+        # ollama preferred: only ollama + extractive, no wrap to gemini
+        assert _build_backend_order("ollama") == ["ollama", "extractive"]
+
+    def test_build_backend_order_extractive_no_fallback(self) -> None:
+        from scholarposter.enrichment.summarizer import _build_backend_order
+        # extractive is last: no backends after it
+        assert _build_backend_order("extractive") == ["extractive"]
+
+    def test_build_backend_order_gemini_unchanged(self) -> None:
+        from scholarposter.enrichment.summarizer import _build_backend_order
+        # gemini is first: full list, unchanged
+        assert _build_backend_order("gemini") == ["gemini", "ollama", "extractive"]
+
+
 class TestSummarizeFallbackLogging:
     def test_fallback_warning_logged_when_primary_backend_fails(self) -> None:
         from loguru import logger

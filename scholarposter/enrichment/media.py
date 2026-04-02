@@ -32,7 +32,7 @@ def resize_image(
     max_bytes = max_size_kb * 1024
     quality = 85
 
-    while quality >= 10:
+    while quality > 10:
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=quality)
         data = buf.getvalue()

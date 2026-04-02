@@ -18,6 +18,7 @@ from scholarposter.config import SummarizationConfig
 _LANGUAGE = "english"
 # Minimum sentence count before extractive summarization is attempted
 _MIN_SENTENCES = 3
+_MIN_SENTENCE_CHARS = 40  # Minimum chars to include a sentence in summary
 
 
 def summarize_gemini(text: str, prompt: str, timeout: int) -> Optional[str]:
@@ -94,7 +95,7 @@ def summarize_extractive(
     if sc > 150:
         reduced_count = max(150, int(150 + sqrt(sc - 150)))
         for sentence in kl_summ(parser.document, reduced_count):
-            if len(str(sentence)) > 40:
+            if len(str(sentence)) > _MIN_SENTENCE_CHARS:
                 full_text += str(sentence) + " "
         full_text = re.sub(r"\([^()]*\)", "", full_text)
         parser = PlaintextParser.from_string(full_text, Tokenizer(_LANGUAGE))
@@ -105,7 +106,7 @@ def summarize_extractive(
     nos = min(max(3, int(0.01 * sc), int(0.05 * pc)), max_sentences)
 
     for sentence in lsa_summ(parser.document, nos):
-        if len(str(sentence)) > 40:
+        if len(str(sentence)) > _MIN_SENTENCE_CHARS:
             full_text += str(sentence) + " "
     full_text = re.sub(r"\([^()]*\)", "", full_text)
 
@@ -182,5 +183,5 @@ def _build_backend_order(preferred: str) -> list[str]:
     all_backends = ["gemini", "ollama", "extractive"]
     if preferred in all_backends:
         idx = all_backends.index(preferred)
-        return all_backends[idx:] + all_backends[:idx]
+        return all_backends[idx:]  # no wrap-around — only cheaper/simpler backends
     return all_backends
