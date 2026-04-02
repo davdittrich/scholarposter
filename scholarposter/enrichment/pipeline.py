@@ -1,12 +1,11 @@
 """Enrichment pipeline orchestrator for scholarposter."""
 from __future__ import annotations
 
+from typing import Optional
 from urllib.parse import urljoin
 
 import httpx
 from loguru import logger
-
-_MAX_HTML_BYTES = 5_000_000
 
 from scholarposter.config import EnrichmentConfig
 from scholarposter.enrichment.doi import detect_dois, lookup_doi
@@ -17,6 +16,8 @@ from scholarposter.enrichment.summarizer import summarize
 from scholarposter.enrichment.url import unshorten_url, detect_content_type
 from scholarposter.models import LinkEnrichment, UnifiedPost
 from scholarposter.state import StateManager
+
+_MAX_HTML_BYTES = 5_000_000
 
 
 class EnrichmentPipeline:
@@ -89,6 +90,15 @@ class EnrichmentPipeline:
 
         return link
 
+    def _detect_doi_from_url(self, url: str) -> Optional[str]:
+        """Detect DOI from a URL. Returns None on failure."""
+        try:
+            dois = detect_dois([url], "")
+            return dois[0] if dois else None
+        except Exception as e:
+            logger.warning(f"DOI detect failed for {url}: {e}")
+            return None
+
     def _enrich_html(self, link: LinkEnrichment, url: str) -> LinkEnrichment:
         """Extract OG tags and body text from an HTML URL."""
         try:
@@ -133,13 +143,9 @@ class EnrichmentPipeline:
         except Exception as e:
             logger.warning(f"Body text extraction failed: {e}")
 
-        # DOI from URL
-        try:
-            dois = detect_dois([url], "")
-            if dois:
-                updates["doi"] = dois[0]
-        except Exception as e:
-            logger.warning(f"DOI detect failed: {e}")
+        doi = self._detect_doi_from_url(url)
+        if doi:
+            updates["doi"] = doi
 
         return link.model_copy(update=updates)
 
@@ -170,13 +176,9 @@ class EnrichmentPipeline:
         except Exception as e:
             logger.warning(f"PDF text extraction failed: {e}")
 
-        # DOI from URL
-        try:
-            dois = detect_dois([url], "")
-            if dois:
-                updates["doi"] = dois[0]
-        except Exception as e:
-            logger.warning(f"DOI detect from PDF URL failed: {e}")
+        doi = self._detect_doi_from_url(url)
+        if doi:
+            updates["doi"] = doi
 
         return link.model_copy(update=updates)
 
