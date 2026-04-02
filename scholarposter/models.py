@@ -98,6 +98,7 @@ class PostResult(BaseModel):
     status: PostStatus
     post_url: Optional[str] = None
     error: Optional[str] = None
+    retryable: bool = False
 
     @property
     def is_success(self) -> bool:
