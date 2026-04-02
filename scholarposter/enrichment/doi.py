@@ -27,18 +27,18 @@ def detect_dois(urls: list[str], text: str) -> list[str]:
     Searches each URL and the full text with a DOI regex, deduplicates,
     and returns a list of matched DOI strings.
     """
-    found: set[str] = set()
+    found: dict[str, None] = {}
 
     for url in urls:
         for match in _DOI_PATTERN.finditer(url):
             cleaned = _clean_doi(match.group(0))
             if cleaned:
-                found.add(cleaned)
+                found[cleaned] = None
 
     for match in _DOI_PATTERN.finditer(text):
         cleaned = _clean_doi(match.group(0))
         if cleaned:
-            found.add(cleaned)
+            found[cleaned] = None
 
     return list(found)
 

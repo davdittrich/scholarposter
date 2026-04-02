@@ -121,6 +121,10 @@ def chunk_text(text: str, max_graphemes: int = MAX_GRAPHEMES) -> list[str]:
             suffixed.append(chunk + suffix)
         return suffixed
 
+    # Handle single chunk exceeding limit (e.g., very long URL with no spaces)
+    if total == 1 and _grapheme_len(chunks[0]) > max_graphemes:
+        chunks[0] = _grapheme_mod.slice(chunks[0], 0, max_graphemes)
+
     return chunks
 
 

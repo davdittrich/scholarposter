@@ -132,6 +132,15 @@ class TestDetectDois:
         assert "10.1234/foo)" in result
 
 
+    def test_detect_dois_preserves_insertion_order(self) -> None:
+        """First DOI encountered should be result[0], not arbitrary set order."""
+        text = "First 10.1111/aaa then 10.2222/bbb"
+        result = detect_dois([], text)
+        assert len(result) == 2
+        assert result[0] == "10.1111/aaa"
+        assert result[1] == "10.2222/bbb"
+
+
 class TestLookupDoi:
     @respx.mock
     def test_returns_dict_with_title(self) -> None:
