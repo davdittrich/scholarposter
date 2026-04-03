@@ -18,7 +18,7 @@ from scholarposter.collector import MastodonCollector
 from scholarposter.config import NotificationBackendConfig, load_config
 from scholarposter.enrichment.pipeline import EnrichmentPipeline
 from scholarposter.filters import evaluate_filters
-from scholarposter.models import PlatformState, PostResult, PostStatus
+from scholarposter.models import BibliographyEntry, PlatformState, PostResult, PostStatus
 from scholarposter.notifications.base import BaseNotifier
 from scholarposter.notifications.ntfy import NtfyNotifier
 from scholarposter.state import StateManager
@@ -215,6 +215,29 @@ def run(
                     last_posted_at=posted_at,
                     last_error=result.error,
                 ))
+
+                # Append DOI-enriched links to bibliography
+                if result.status == PostStatus.POSTED:
+                    for link in post.links:
+                        if link.doi and link.title:
+                            authors: list[str] = []
+                            pub_year: Optional[int] = None
+                            cached = state_mgr.cache_get(f"doi:{link.doi}")
+                            if cached:
+                                authors = cached.get("authors", [])
+                                pub_year = cached.get("year")
+                            entry = BibliographyEntry(
+                                doi=link.doi,
+                                title=link.title,
+                                authors=authors,
+                                abstract=link.description or "",
+                                url=link.resolved_url or link.original_url,
+                                shared_at=datetime.now(timezone.utc),
+                                publication_year=pub_year,
+                                platforms=[plat],
+                                source_toot_id=post.source_id,
+                            )
+                            state_mgr.append_bibliography(entry)
 
             if result.status == PostStatus.POSTED:
                 logger.info(f"[{plat}] Posted {post.source_id}: {result.post_url}")
@@ -451,3 +474,56 @@ def _print_masked_config(data: Any, indent: int = 0) -> None:
                         typer.echo(f"{prefix}{bullet}{key}: {value}")
             else:
                 typer.echo(f"{prefix}- {item}")
+
+
+@app.command()
+def bibliography(
+    output_format: str = typer.Option("bibtex", "--format", help="bibtex, json, or markdown"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
+    config: Path = typer.Option(Path("config.toml"), "--config"),
+) -> None:
+    """Export bibliography of shared papers."""
+    try:
+        cfg = load_config(config)
+        state_dir = config.parent.resolve()
+        state_mgr = StateManager(
+            state_dir=state_dir,
+            state_file=Path(cfg.state.state_file).name,
+            cache_file=Path(cfg.state.cache_file).name,
+        )
+    except Exception:
+        state_mgr = StateManager()
+
+    raw = state_mgr.load_bibliography()
+    if not raw:
+        typer.echo("No bibliography entries yet.")
+        return
+
+    entries: list[BibliographyEntry] = []
+    for d in raw:
+        try:
+            entries.append(BibliographyEntry.model_validate(d))
+        except Exception as e:
+            logger.warning(f"Skipping malformed bibliography entry: {e}")
+    if not entries:
+        typer.echo("No valid bibliography entries found.")
+        return
+
+    if output_format == "bibtex":
+        from scholarposter.bibliography import to_bibtex
+        text = to_bibtex(entries)
+    elif output_format == "markdown":
+        from scholarposter.bibliography import to_markdown
+        text = to_markdown(entries)
+    elif output_format == "json":
+        import json as json_mod
+        text = json_mod.dumps([e.model_dump(mode="json") for e in entries], indent=2, default=str)
+    else:
+        typer.echo(f"Unknown format: {output_format}", err=True)
+        raise typer.Exit(code=2)
+
+    if output:
+        output.write_text(text)
+        typer.echo(f"Written to {output}")
+    else:
+        typer.echo(text)
