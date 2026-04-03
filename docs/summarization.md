@@ -31,9 +31,7 @@ enabled = true
 backend = "extractive"
 
 [enrichment.summarization.extractive]
-algorithm = "kl"      # "kl" or "lsa"
 max_sentences = 5
-timeout_seconds = 10
 ```
 
 ---
