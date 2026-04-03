@@ -38,26 +38,28 @@ max_sentences = 5
 
 ## Gemini CLI
 
-scholarposter calls the `gemini` CLI binary as a subprocess, piping the article text via stdin:
-
-```
-gemini -p "<your prompt>"
-```
+scholarposter communicates with the Gemini CLI via the Agent Client Protocol (ACP) —
+a structured JSON-RPC interface that replaces raw subprocess invocation.
 
 ### Install
 
-Install the Google Gemini CLI. The exact package name may vary; as of early 2026:
+Install the Gemini CLI and the ACP client library:
 
 ```bash
+# Gemini CLI
 pip install google-generativeai
 # or follow the official install instructions at https://ai.google.dev/gemini-api/docs/downloads
+
+# ACP client library (required for Gemini summarization)
+pip install scholarposter[gemini]
+# or: pip install agent-client-protocol>=0.9.0
 ```
 
-After installation, verify the binary is on your PATH:
+Verify the CLI is on your PATH:
 
 ```bash
 which gemini
-gemini --version
+gemini --version   # requires 0.34.0+
 ```
 
 ### Authenticate
@@ -82,8 +84,23 @@ backend = "gemini"
 prompt = "Summarize this academic paper/article in 2-3 sentences for a social media post. Focus on the key finding and methodology. Be concise and precise."
 
 [enrichment.summarization.gemini]
+model = "gemini-3-flash-preview"   # fast and cheap; or "" for CLI default
 timeout_seconds = 30
 ```
+
+### Model selection
+
+| Model | Speed | Cost | Best for |
+|-------|-------|------|----------|
+| `gemini-3-flash-preview` | Fast | Low | Summarization, triage |
+| `gemini-3.1-pro-preview` | Slower | Higher | Complex analysis |
+| `""` (empty) | CLI default | Varies | Use whatever CLI is configured with |
+
+### Graceful degradation
+
+If the ACP library is not installed or the `gemini` binary is not on PATH, the
+Gemini backend silently returns `None` and the fallback chain continues to Ollama
+or extractive. No crash, no error — just a log message at DEBUG level.
 
 ### Cron PATH fix
 

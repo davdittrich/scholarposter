@@ -79,7 +79,8 @@ Fallback is only to cheaper/simpler backends (no wrap-around).
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `timeout_seconds` | `30` | Subprocess timeout for Gemini CLI |
+| `model` | `""` | Gemini model name (empty = CLI default); e.g. `"gemini-3-flash-preview"` |
+| `timeout_seconds` | `30` | ACP session timeout for Gemini CLI |
 
 ### `[enrichment.summarization.ollama]`
 
