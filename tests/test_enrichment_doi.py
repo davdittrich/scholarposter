@@ -218,3 +218,63 @@ class TestLookupDoi:
         respx.get(_crossref_url(doi)).mock(side_effect=httpx.TimeoutException("timed out"))
         result = lookup_doi(doi, etiquette_email="test@example.com", timeout=1)
         assert result is None
+
+    @respx.mock
+    def test_lookup_doi_returns_year(self) -> None:
+        """result['year'] is extracted from issued.date-parts."""
+        doi = "10.1000/year-test"
+        payload = {
+            "status": "ok",
+            "message": {
+                "title": ["Year Paper"],
+                "abstract": "",
+                "author": [],
+                "issued": {"date-parts": [[2024, 3, 15]]},
+            },
+        }
+        respx.get(_crossref_url(doi)).mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        result = lookup_doi(doi, etiquette_email="test@example.com", timeout=5)
+        assert result is not None
+        assert result["year"] == 2024
+
+    @respx.mock
+    def test_lookup_doi_no_date(self) -> None:
+        """When neither 'issued' nor 'published-print' is present, 'year' is absent."""
+        doi = "10.1000/no-date"
+        payload = {
+            "status": "ok",
+            "message": {
+                "title": ["No Date Paper"],
+                "abstract": "",
+                "author": [],
+            },
+        }
+        respx.get(_crossref_url(doi)).mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        result = lookup_doi(doi, etiquette_email="test@example.com", timeout=5)
+        assert result is not None
+        assert "year" not in result
+
+    @respx.mock
+    def test_lookup_doi_issued_null(self) -> None:
+        """issued: null in Crossref response must not crash; falls back to published-print."""
+        doi = "10.1000/null-issued"
+        payload = {
+            "status": "ok",
+            "message": {
+                "title": ["Null Issued Paper"],
+                "abstract": "",
+                "author": [],
+                "issued": None,
+                "published-print": {"date-parts": [[2021, 6]]},
+            },
+        }
+        respx.get(_crossref_url(doi)).mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        result = lookup_doi(doi, etiquette_email="test@example.com", timeout=5)
+        assert result is not None
+        assert result["year"] == 2021

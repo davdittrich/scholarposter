@@ -92,4 +92,14 @@ def lookup_doi(
             authors.append(name)
     result["authors"] = authors
 
+    # Publication year: prefer "issued", fall back to "published-print"
+    # Use (x or {}) pattern because Crossref may return "issued": null
+    issued = (data.get("issued") or {}).get("date-parts", [[None]])[0]
+    if issued and issued[0]:
+        result["year"] = issued[0]
+    else:
+        pub_print = (data.get("published-print") or {}).get("date-parts", [[None]])[0]
+        if pub_print and pub_print[0]:
+            result["year"] = pub_print[0]
+
     return result

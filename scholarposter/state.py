@@ -11,7 +11,7 @@ from typing import Any, Generator, Optional
 
 from loguru import logger
 
-from scholarposter.models import PlatformState
+from scholarposter.models import BibliographyEntry, PlatformState
 
 
 class StateManager:
@@ -100,6 +100,40 @@ class StateManager:
         return pruned
 
     # -------------------------------------------------------------------------
+    # Bibliography
+    # -------------------------------------------------------------------------
+
+    def load_bibliography(self) -> list[dict]:
+        """Load bibliography entries. Returns [] on missing/corrupt file."""
+        bib_path = self._dir / "bibliography.json"
+        if not bib_path.exists():
+            return []
+        try:
+            with open(bib_path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning(f"bibliography.json corrupt, treating as empty: {e}")
+            return []
+
+    def _save_bibliography(self, data: list) -> None:
+        self._atomic_write(self._dir / "bibliography.json", data)
+
+    def append_bibliography(self, entry: "BibliographyEntry") -> None:
+        """Append entry, dedup by DOI. Must be called while lock is held."""
+        if self._lock_fd is None:
+            logger.warning("append_bibliography called without holding lock")
+        bib = self.load_bibliography()
+        entry_dict = entry.model_dump(mode="json")
+        for existing in bib:
+            if existing.get("doi") == entry.doi:
+                old_platforms = existing.get("platforms", [])
+                existing["platforms"] = list(set(old_platforms + entry.platforms))
+                break
+        else:
+            bib.append(entry_dict)
+        self._save_bibliography(bib)
+
+    # -------------------------------------------------------------------------
     # Locking
     # -------------------------------------------------------------------------
 
@@ -134,7 +168,7 @@ class StateManager:
     # Helpers
     # -------------------------------------------------------------------------
 
-    def _atomic_write(self, path: Path, data: dict[str, Any]) -> None:
+    def _atomic_write(self, path: Path, data: dict[str, Any] | list[Any]) -> None:
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
