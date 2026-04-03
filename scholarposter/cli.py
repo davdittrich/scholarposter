@@ -15,10 +15,10 @@ from loguru import logger
 from mastodon import Mastodon
 
 from scholarposter.collector import MastodonCollector
-from scholarposter.config import NotificationBackendConfig, load_config
+from scholarposter.config import EnrichmentConfig, NotificationBackendConfig, load_config
 from scholarposter.enrichment.pipeline import EnrichmentPipeline
 from scholarposter.filters import evaluate_filters
-from scholarposter.models import BibliographyEntry, PlatformState, PostResult, PostStatus
+from scholarposter.models import BibliographyEntry, PlatformState, PostResult, PostStatus, UnifiedPost
 from scholarposter.notifications.base import BaseNotifier
 from scholarposter.notifications.ntfy import NtfyNotifier
 from scholarposter.state import StateManager
@@ -527,3 +527,71 @@ def bibliography(
         typer.echo(f"Written to {output}")
     else:
         typer.echo(text)
+
+
+@app.command()
+def enrich(
+    url: str = typer.Argument(help="URL to enrich"),
+    config: Path = typer.Option(Path("config.toml"), "--config"),
+    summarize: bool = typer.Option(True, help="Include summary"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """Enrich a URL: resolve, extract metadata, look up DOI, summarize."""
+    try:
+        cfg = load_config(config)
+        enrichment_cfg = cfg.enrichment
+        state_dir = config.parent.resolve()
+        state_mgr = StateManager(
+            state_dir=state_dir,
+            state_file=Path(cfg.state.state_file).name,
+            cache_file=Path(cfg.state.cache_file).name,
+        )
+    except Exception:
+        enrichment_cfg = EnrichmentConfig()
+        state_mgr = StateManager()
+
+    if not summarize:
+        enrichment_cfg = enrichment_cfg.model_copy(
+            update={"summarization": enrichment_cfg.summarization.model_copy(
+                update={"enabled": False}
+            )}
+        )
+
+    pipeline = EnrichmentPipeline(config=enrichment_cfg, cache=state_mgr)
+
+    dummy_post = UnifiedPost(
+        source_id="enrich-cli",
+        text="",
+        source_url="",
+        created_at=datetime.now(timezone.utc),
+        urls=[url],
+    )
+    enriched = pipeline.enrich(dummy_post)
+
+    link = enriched.links[0] if enriched.links else None
+    if link is None:
+        typer.echo("No enrichment data found.", err=True)
+        raise typer.Exit(code=1)
+
+    has_metadata = any([link.title, link.doi, link.description, link.summary])
+
+    if json_output:
+        import json as json_mod
+        typer.echo(json_mod.dumps(
+            link.model_dump(mode="json", exclude={"body_text", "thumbnail_bytes"}),
+            indent=2, default=str,
+        ))
+    else:
+        if link.title:
+            typer.echo(f"Title:    {link.title}")
+        if link.doi:
+            typer.echo(f"DOI:      {link.doi}")
+        if link.description:
+            desc = link.description[:200] + ("…" if len(link.description) > 200 else "")
+            typer.echo(f"Abstract: {desc}")
+        if link.resolved_url and link.resolved_url != link.original_url:
+            typer.echo(f"Resolved: {link.resolved_url}")
+        if link.summary:
+            typer.echo(f"\nSummary:\n{link.summary}")
+        if not has_metadata:
+            typer.echo("No structured metadata found.")
