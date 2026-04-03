@@ -10,18 +10,10 @@ from typing import Any, Optional
 import httpx
 from loguru import logger
 
-from tldr_scholar.backends.base import BackendBase
+from tldr_scholar.backends.base import BackendBase, SUMMARY_PROMPT_TEMPLATE
 
 _MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _cached_model: Optional[str] = None
-
-_PROMPT_TEMPLATE = (
-    "Summarize the following document in approximately {max_chars} characters.\n"
-    "Focus on: {focus}.\n"
-    "Be concise, precise, and factual. Do not add information not in the source.\n"
-    "{hashtag_instruction}\n\n"
-    "<document>\n{text}\n</document>"
-)
 
 
 class LemonadeBackend(BackendBase):
@@ -55,7 +47,7 @@ class LemonadeBackend(BackendBase):
                 logger.debug("No Lemonade model available")
                 return None
 
-        prompt = _PROMPT_TEMPLATE.format(
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(
             max_chars=max_chars, focus=focus,
             hashtag_instruction=hashtag_instruction, text=text,
         )

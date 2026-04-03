@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-import fitz
 import httpx
-import pymupdf4llm
 import trafilatura
 from loguru import logger
+
+# fitz and pymupdf4llm are heavy C-extension imports (~200ms).
+# Imported lazily inside _ingest_pdf and _ingest_url's PDF branch.
 
 _MAX_INPUT_BYTES = 5_000_000  # 5 MB cap
 
@@ -62,7 +63,8 @@ def ingest(source: str) -> tuple[str, str]:
 
 def _ingest_pdf(path: Path) -> str:
     """Extract text from PDF (first 20 pages). Detects password-protected PDFs."""
-
+    import fitz
+    import pymupdf4llm
 
     pdf_bytes = path.read_bytes()
     if len(pdf_bytes) > _MAX_INPUT_BYTES:
@@ -118,8 +120,8 @@ def _ingest_url(url: str) -> tuple[str, str]:
         except Exception as e:
             raise EmptyTextError(f"Failed to download PDF from {url}: {e}")
 
-    
-    
+        import fitz
+        import pymupdf4llm
         try:
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
             pages = list(range(min(20, len(doc))))

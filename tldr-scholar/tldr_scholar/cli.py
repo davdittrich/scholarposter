@@ -60,17 +60,17 @@ def main(
         typer.echo(f"Invalid length '{length}'. Choose: short, medium, long", err=True)
         raise typer.Exit(code=2)
 
-    # Load config
+    # Load config — dict-of-dicts keyed by backend name so auto mode
+    # doesn't merge conflicting hosts/models across backends
     config_path = config or os.environ.get("TLDR_SCHOLAR_CONFIG")
-    backend_config = {}
+    backend_config: dict = {}
     if config_path:
         cfg = load_config(Path(config_path))
-        if backend in ("gemini", "auto"):
-            backend_config.update(cfg.gemini.model_dump())
-        if backend in ("lemonade", "auto"):
-            backend_config.update(cfg.lemonade.model_dump())
-        if backend in ("ollama", "auto"):
-            backend_config.update(cfg.ollama.model_dump())
+        backend_config = {
+            "gemini": cfg.gemini.model_dump(),
+            "lemonade": cfg.lemonade.model_dump(),
+            "ollama": cfg.ollama.model_dump(),
+        }
 
     # Run summarization
     try:

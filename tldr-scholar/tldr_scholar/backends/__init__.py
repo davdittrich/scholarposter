@@ -22,10 +22,19 @@ _AUTO_ORDER = ["gemini", "lemonade", "ollama", "extractive"]
 
 
 def get_backend(name: str, config: dict[str, Any] | None = None) -> BackendBase:
-    """Create a backend instance by name. Raises ValueError for unknown names."""
+    """Create a backend instance by name. Raises ValueError for unknown names.
+
+    Config can be:
+    - dict-of-dicts keyed by backend name (CLI path): {"lemonade": {...}, "ollama": {...}}
+      → extracts the sub-dict for this backend
+    - flat dict (library API path): {"host": "...", "model": "..."}
+      → passed through to the backend directly
+    """
     cls = _BACKEND_MAP.get(name)
     if cls is None:
         raise ValueError(f"Unknown backend: {name}. Choose from: {', '.join(_BACKEND_MAP)}")
+    if config and name in config and isinstance(config[name], dict):
+        return cls(config[name])
     return cls(config)
 
 

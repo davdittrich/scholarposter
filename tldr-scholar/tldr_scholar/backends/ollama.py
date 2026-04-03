@@ -6,15 +6,7 @@ from typing import Any, Optional
 import httpx
 from loguru import logger
 
-from tldr_scholar.backends.base import BackendBase
-
-_PROMPT_TEMPLATE = (
-    "Summarize the following document in approximately {max_chars} characters.\n"
-    "Focus on: {focus}.\n"
-    "Be concise, precise, and factual. Do not add information not in the source.\n"
-    "{hashtag_instruction}\n\n"
-    "<document>\n{text}\n</document>"
-)
+from tldr_scholar.backends.base import BackendBase, SUMMARY_PROMPT_TEMPLATE
 
 
 class OllamaBackend(BackendBase):
@@ -26,7 +18,7 @@ class OllamaBackend(BackendBase):
 
     def summarize(self, text: str, max_chars: int, focus: str,
                   hashtag_instruction: str) -> Optional[str]:
-        prompt = _PROMPT_TEMPLATE.format(
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(
             max_chars=max_chars, focus=focus,
             hashtag_instruction=hashtag_instruction, text=text,
         )

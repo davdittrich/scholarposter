@@ -5,15 +5,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from tldr_scholar.backends.base import BackendBase
-
-_PROMPT_TEMPLATE = (
-    "Summarize the following document in approximately {max_chars} characters.\n"
-    "Focus on: {focus}.\n"
-    "Be concise, precise, and factual. Do not add information not in the source.\n"
-    "{hashtag_instruction}\n\n"
-    "<document>\n{text}\n</document>"
-)
+from tldr_scholar.backends.base import BackendBase, SUMMARY_PROMPT_TEMPLATE
 
 
 class GeminiBackend(BackendBase):
@@ -34,11 +26,12 @@ class GeminiBackend(BackendBase):
             logger.debug("ACP library not available")
             return None
 
-        prompt = _PROMPT_TEMPLATE.format(
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(
             max_chars=max_chars, focus=focus,
             hashtag_instruction=hashtag_instruction, text=text,
         )
         return summarize_via_gemini(
-            text="", prompt=prompt,
+            text="",  # text already embedded in prompt via <document> delimiters
+            prompt=prompt,
             model=self._model, timeout=self._timeout,
         )

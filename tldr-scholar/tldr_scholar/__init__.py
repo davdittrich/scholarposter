@@ -7,7 +7,7 @@ Public API:
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 from loguru import logger
@@ -31,10 +31,9 @@ def _strip_url_credentials(url: str) -> str:
     """Remove userinfo (user:pass@) from URL for safe metadata storage."""
     parsed = urlparse(url)
     if parsed.username or parsed.password:
-        safe = parsed._replace(netloc=parsed.hostname or "")
-        if parsed.port:
-            safe = safe._replace(netloc=f"{parsed.hostname}:{parsed.port}")
-        return safe.geturl()
+        hostname = parsed.hostname or ""
+        netloc = f"{hostname}:{parsed.port}" if parsed.port else hostname
+        return parsed._replace(netloc=netloc).geturl()
     return url
 
 
@@ -76,7 +75,7 @@ def summarize(
         focus=req.focus,
         hashtag_instruction=hashtag_instruction,
         backend=req.backend,
-        config=req.backend_config or None,
+        config=req.backend_config if req.backend_config else None,
     )
 
     if not response:

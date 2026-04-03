@@ -5,6 +5,15 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 
+SUMMARY_PROMPT_TEMPLATE = (
+    "Summarize the following document in approximately {max_chars} characters.\n"
+    "Focus on: {focus}.\n"
+    "Be concise, precise, and factual. Do not add information not in the source.\n"
+    "{hashtag_instruction}\n\n"
+    "<document>\n{text}\n</document>"
+)
+
+
 class BackendBase(ABC):
     """Abstract interface for summarization backends.
 
