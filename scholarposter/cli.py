@@ -54,6 +54,28 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None,
                    filter=_redact_filter)
 
 
+def _load_config_and_state(config: Path) -> tuple[StateManager, Optional[Any]]:
+    """Load config and construct StateManager.
+
+    Returns (state_mgr, cfg). On config failure, returns (StateManager(), None).
+    On StateManager failure, returns (StateManager(), cfg) — config is preserved.
+    """
+    try:
+        cfg = load_config(config)
+    except Exception:
+        return StateManager(), None
+    try:
+        state_dir = config.parent.resolve()
+        state_mgr = StateManager(
+            state_dir=state_dir,
+            state_file=Path(cfg.state.state_file).name,
+            cache_file=Path(cfg.state.cache_file).name,
+        )
+        return state_mgr, cfg
+    except Exception:
+        return StateManager(), cfg
+
+
 def _check_env_permissions(cfg=None) -> None:
     """Warn if .env or credential files are world- or group-readable."""
     paths_to_check: list[str] = []
@@ -483,17 +505,7 @@ def bibliography(
     config: Path = typer.Option(Path("config.toml"), "--config"),
 ) -> None:
     """Export bibliography of shared papers."""
-    try:
-        cfg = load_config(config)
-        state_dir = config.parent.resolve()
-        state_mgr = StateManager(
-            state_dir=state_dir,
-            state_file=Path(cfg.state.state_file).name,
-            cache_file=Path(cfg.state.cache_file).name,
-        )
-    except Exception:
-        state_mgr = StateManager()
-
+    state_mgr, _ = _load_config_and_state(config)
     raw = state_mgr.load_bibliography()
     if not raw:
         typer.echo("No bibliography entries yet.")
@@ -537,18 +549,8 @@ def enrich(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     """Enrich a URL: resolve, extract metadata, look up DOI, summarize."""
-    try:
-        cfg = load_config(config)
-        enrichment_cfg = cfg.enrichment
-        state_dir = config.parent.resolve()
-        state_mgr = StateManager(
-            state_dir=state_dir,
-            state_file=Path(cfg.state.state_file).name,
-            cache_file=Path(cfg.state.cache_file).name,
-        )
-    except Exception:
-        enrichment_cfg = EnrichmentConfig()
-        state_mgr = StateManager()
+    state_mgr, cfg = _load_config_and_state(config)
+    enrichment_cfg = cfg.enrichment if cfg else EnrichmentConfig()
 
     if not summarize:
         enrichment_cfg = enrichment_cfg.model_copy(
@@ -605,18 +607,8 @@ def discover(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     """Discover recent papers matching your sharing interests."""
-    try:
-        cfg = load_config(config)
-        state_dir = config.parent.resolve()
-        state_mgr = StateManager(
-            state_dir=state_dir,
-            state_file=Path(cfg.state.state_file).name,
-            cache_file=Path(cfg.state.cache_file).name,
-        )
-        email = cfg.enrichment.crossref.etiquette_email
-    except Exception:
-        state_mgr = StateManager()
-        email = ""
+    state_mgr, cfg = _load_config_and_state(config)
+    email = cfg.enrichment.crossref.etiquette_email if cfg else ""
 
     bib = state_mgr.load_bibliography()
     if not bib:
