@@ -10,6 +10,7 @@ state.json
 state.json.tmp
 cache.json
 cache.json.tmp
+bibliography.json
 scholarposter.lock
 config.toml
 
@@ -26,6 +27,11 @@ build/
 .eggs/
 *.egg
 
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+
 # Virtual environments
 venv/
 .venv/
@@ -41,3 +47,12 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Development tooling (not part of the package)
+.beads/
+.claude/
+.metaswarm/
+.coverage-thresholds.json
+CLAUDE.md
+tasks/
+scholarposter/.tldr/
