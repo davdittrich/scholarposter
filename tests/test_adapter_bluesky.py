@@ -237,31 +237,8 @@ class TestBlueskyImageProcessing:
 
         mock_resize.assert_called_once_with(b"\xff\xd8\xff", max_size_kb=950, max_dims=(2048, 2048))
 
-    def test_webp_magic_bytes_converted_to_jpeg(self, mock_client):
-        mock_blob = MagicMock()
-        mock_client.com.atproto.repo.upload_blob.return_value = MagicMock(blob=mock_blob)
-        mock_record = MagicMock()
-        mock_record.uri = "at://did:plc:testuser/app.bsky.feed.post/abc"
-        mock_record.cid = "bafy"
-        mock_client.com.atproto.repo.create_record.return_value = mock_record
-
-        # WebP magic: RIFF....WEBP
-        webp_bytes = b"RIFF\x10\x00\x00\x00WEBP" + b"\x00" * 20
-
-        adapter = BlueskyAdapter(client=mock_client)
-        att = MediaAttachment(url="https://example.com/img.webp", mime_type="image/jpeg")
-        post = make_post("hello", media=[att])
-
-        with (
-            patch("scholarposter.adapters.bluesky.download_media", return_value=webp_bytes),
-            patch("scholarposter.adapters.bluesky.convert_to_jpeg", return_value=b"\xff\xd8\xff") as mock_convert,
-            patch("scholarposter.adapters.bluesky.resize_image", return_value=b"\xff\xd8\xff"),
-        ):
-            adapter.post(post)
-
-        mock_convert.assert_called_once_with(webp_bytes)
-
-    def test_non_webp_not_converted(self, mock_client):
+    def test_non_jpeg_handled_by_resize(self, mock_client):
+        """resize_image handles format conversion via PIL — no separate pre-conversion needed."""
         mock_blob = MagicMock()
         mock_client.com.atproto.repo.upload_blob.return_value = MagicMock(blob=mock_blob)
         mock_record = MagicMock()
@@ -277,12 +254,11 @@ class TestBlueskyImageProcessing:
 
         with (
             patch("scholarposter.adapters.bluesky.download_media", return_value=jpeg_bytes),
-            patch("scholarposter.adapters.bluesky.convert_to_jpeg") as mock_convert,
-            patch("scholarposter.adapters.bluesky.resize_image", return_value=jpeg_bytes),
+            patch("scholarposter.adapters.bluesky.resize_image", return_value=jpeg_bytes) as mock_resize,
         ):
             adapter.post(post)
 
-        mock_convert.assert_not_called()
+        mock_resize.assert_called_once()
 
     def test_thumbnail_resized_to_400x400(self, mock_client):
         mock_blob = MagicMock()

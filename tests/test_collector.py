@@ -137,7 +137,7 @@ class TestTootToUnifiedPost:
     def test_basic_toot(self, sample_toot):
         mock_client = MagicMock()
         collector = MastodonCollector(mock_client)
-        post = collector._toot_to_unified_post(sample_toot)
+        post = collector.toot_to_unified_post(sample_toot)
         assert post.source_id == "113456789012345678"
         assert "Economics" in post.hashtags
         assert "GameTheory" in post.hashtags
@@ -146,14 +146,14 @@ class TestTootToUnifiedPost:
     def test_media_toot(self, sample_with_media):
         mock_client = MagicMock()
         collector = MastodonCollector(mock_client)
-        post = collector._toot_to_unified_post(sample_with_media)
+        post = collector.toot_to_unified_post(sample_with_media)
         assert len(post.media) == 1
         assert post.media[0].alt_text is not None
 
     def test_reblog_toot(self, sample_reblog):
         mock_client = MagicMock()
         collector = MastodonCollector(mock_client)
-        post = collector._toot_to_unified_post(sample_reblog)
+        post = collector.toot_to_unified_post(sample_reblog)
         assert post.is_reblog is True
         assert post.original_author is not None
         assert "Jane" in post.original_author or "researcher" in post.original_author.lower()

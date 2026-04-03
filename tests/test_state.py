@@ -43,6 +43,15 @@ class TestStateManager:
         tmp_file = state_dir / "state.json.tmp"
         assert not tmp_file.exists()
 
+    def test_atomic_write_cleans_tmp_on_failure(self, mgr, state_dir):
+        """_atomic_write must remove .tmp file when json.dump raises."""
+        circular: dict = {}
+        circular["self"] = circular  # circular reference defeats default=str
+        with pytest.raises(ValueError):
+            mgr._atomic_write(state_dir / "test.json", circular)
+        tmp_file = state_dir / "test.json.tmp"
+        assert not tmp_file.exists()
+
     def test_get_since_id_none_when_missing(self, mgr):
         assert mgr.get_since_id("bluesky") is None
 

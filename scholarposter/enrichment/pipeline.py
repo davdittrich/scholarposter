@@ -69,6 +69,12 @@ class EnrichmentPipeline:
         else:
             link = self._enrich_html(link, resolved)
 
+        # Stage 3.5: DOI from URL pattern (shared across HTML/PDF paths)
+        if not link.doi:
+            doi = self._detect_doi_from_url(resolved)
+            if doi:
+                link = link.model_copy(update={"doi": doi})
+
         # Stage 4: DOI detection + lookup
         if self._cfg.crossref.enabled:
             link = self._enrich_doi(link, context_text)
@@ -143,10 +149,6 @@ class EnrichmentPipeline:
         except Exception as e:
             logger.warning(f"Body text extraction failed: {e}")
 
-        doi = self._detect_doi_from_url(url)
-        if doi:
-            updates["doi"] = doi
-
         return link.model_copy(update=updates)
 
     def _enrich_pdf(self, link: LinkEnrichment, url: str) -> LinkEnrichment:
@@ -175,10 +177,6 @@ class EnrichmentPipeline:
                 updates["body_text"] = text
         except Exception as e:
             logger.warning(f"PDF text extraction failed: {e}")
-
-        doi = self._detect_doi_from_url(url)
-        if doi:
-            updates["doi"] = doi
 
         return link.model_copy(update=updates)
 

@@ -15,7 +15,7 @@ from loguru import logger
 from mastodon import Mastodon
 
 from scholarposter.collector import MastodonCollector
-from scholarposter.config import EnrichmentConfig, NotificationBackendConfig, load_config
+from scholarposter.config import EnrichmentConfig, NotificationBackendConfig, PlatformConfig, load_config
 from scholarposter.enrichment.pipeline import EnrichmentPipeline
 from scholarposter.filters import evaluate_filters
 from scholarposter.models import BibliographyEntry, PlatformState, PostResult, PostStatus, UnifiedPost
@@ -159,8 +159,9 @@ def run(
 
     _check_env_permissions(cfg)
 
+    state_dir = config.parent.resolve()
     state_mgr = StateManager(
-        state_dir=Path("."),
+        state_dir=state_dir,
         state_file=cfg.state.state_file,
         cache_file=cfg.state.cache_file,
         lock_file=cfg.state.lock_file,
@@ -276,7 +277,7 @@ def run(
         state_mgr.release_lock()
 
 
-def _dispatch_post(platform: str, post, plat_cfg, dry_run: bool):
+def _dispatch_post(platform: str, post: UnifiedPost, plat_cfg: PlatformConfig, dry_run: bool) -> PostResult:
     """Instantiate adapter and post. Validates credentials before API calls."""
     if platform == "bluesky":
         email = os.environ.get("BLUESKY_EMAIL")
@@ -331,7 +332,8 @@ def status(
     setup_logging(level=log_level)
 
     state_file = cfg.state.state_file if cfg else "state.json"
-    state_mgr = StateManager(state_file=state_file)
+    state_dir = config.parent.resolve() if cfg else Path(".")
+    state_mgr = StateManager(state_dir=state_dir, state_file=state_file)
     state = state_mgr.load_state()
 
     if not state:
@@ -396,8 +398,9 @@ def retry(
     setup_logging(level=log_level)
     _check_env_permissions(cfg)
 
+    state_dir = config.parent.resolve()
     state_mgr = StateManager(
-        state_dir=Path("."),
+        state_dir=state_dir,
         state_file=cfg.state.state_file,
         cache_file=cfg.state.cache_file,
         lock_file=cfg.state.lock_file,
@@ -424,7 +427,7 @@ def retry(
 
         # Fetch the specific toot directly (bypasses timeline pagination)
         raw_toot = mastodon.status(toot_id)
-        post = collector._toot_to_unified_post(raw_toot)
+        post = collector.toot_to_unified_post(raw_toot)
         post = pipeline.enrich(post)
         result = _dispatch_post(platform, post, plat_cfg, dry_run)
 

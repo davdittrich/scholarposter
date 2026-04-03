@@ -13,7 +13,7 @@ from loguru import logger
 
 from scholarposter.adapters.base import BaseAdapter
 from scholarposter.config import HashtagRule, MediaConfig
-from scholarposter.enrichment.media import convert_to_jpeg, download_media, resize_image
+from scholarposter.enrichment.media import download_media, resize_image
 from scholarposter.filters import apply_hashtag_rules
 from scholarposter.models import PostResult, PostStatus, UnifiedPost
 
@@ -264,9 +264,6 @@ class BlueskyAdapter(BaseAdapter):
                     img_bytes = download_media(att.url)
                     if not img_bytes:
                         continue
-                    # Detect WebP via magic bytes (att.mime_type is always "image/jpeg")
-                    if img_bytes[:4] == b"RIFF" and img_bytes[8:12] == b"WEBP":
-                        img_bytes = convert_to_jpeg(img_bytes)
                     img_bytes = resize_image(img_bytes, max_size_kb=self._media_cfg.max_image_size_kb, max_dims=(2048, 2048))
                     upload = self._client.com.atproto.repo.upload_blob(img_bytes)
                     images.append(

@@ -18,7 +18,7 @@ def extract_interests(bibliography: list[dict]) -> dict:
                 authors[author] = authors.get(author, 0) + 1
         if entry.get("doi"):
             dois.add(entry["doi"])
-    top_authors = sorted(authors, key=authors.get, reverse=True)[:10]
+    top_authors = sorted(authors, key=lambda a: authors[a], reverse=True)[:10]
     return {"top_authors": top_authors, "shared_dois": dois}
 
 

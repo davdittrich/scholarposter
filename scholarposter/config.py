@@ -71,7 +71,6 @@ class OllamaSummarizationConfig(BaseModel):
 
 class ExtractiveSummarizationConfig(BaseModel):
     max_sentences: int = 5
-    timeout_seconds: int = 10  # Deprecated: kept for config compat; not used at runtime
 
 
 class SummarizationConfig(BaseModel):

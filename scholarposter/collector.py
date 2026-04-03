@@ -91,9 +91,9 @@ class MastodonCollector:
 
         # Return the oldest (last item in the list — Mastodon returns newest first)
         oldest = toots[-1]
-        return self._toot_to_unified_post(oldest)
+        return self.toot_to_unified_post(oldest)
 
-    def _toot_to_unified_post(self, toot: dict[str, Any]) -> UnifiedPost:
+    def toot_to_unified_post(self, toot: dict[str, Any]) -> UnifiedPost:
         """Convert a raw Mastodon toot dict to a UnifiedPost."""
         is_reblog = bool(toot.get("reblog"))
         original_author: Optional[str] = None

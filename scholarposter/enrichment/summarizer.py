@@ -31,9 +31,6 @@ def _collect_sentences(sentences, min_chars: int = _MIN_SENTENCE_CHARS) -> str:
     return re.sub(r"\([^()]*\)", "", text)
 
 
-# summarize_gemini replaced by summarize_via_gemini from gemini_client.py (ACP-based)
-
-
 _cached_lemonade_model: Optional[str] = None
 
 
@@ -57,7 +54,7 @@ def _get_downloaded_models() -> list[str]:
             if len(parts) >= 2 and parts[1] == "Yes":
                 models.append(parts[0])
         return models
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+    except Exception:
         return []
 
 
@@ -69,7 +66,7 @@ def _load_lemonade_model(model: str, ctx_size: int, host: str,
             ["lemonade", "load", model, "--ctx-size", str(ctx_size)],
             capture_output=True, text=True, timeout=load_timeout,
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+    except Exception:
         return False
 
     if result.returncode != 0:
@@ -192,7 +189,7 @@ def summarize_lemonade(
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         return content.strip() or None
-    except (httpx.TimeoutException, httpx.HTTPError, KeyError, IndexError, Exception):
+    except Exception:
         return None
 
 
@@ -215,7 +212,7 @@ def summarize_ollama(
             timeout=timeout,
         )
         return response.json()["response"].strip() or None
-    except (httpx.TimeoutException, httpx.HTTPError, Exception):
+    except Exception:
         return None
 
 

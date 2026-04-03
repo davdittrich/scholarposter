@@ -171,6 +171,13 @@ class StateManager:
     def _atomic_write(self, path: Path, data: dict[str, Any] | list[Any]) -> None:
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump(data, f, indent=2, default=str)
-        os.rename(tmp_path, path)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+            os.rename(tmp_path, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise

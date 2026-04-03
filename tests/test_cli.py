@@ -545,7 +545,7 @@ class TestRetryCommand:
             mock_mastodon_cls.return_value = mock_mastodon
 
             mock_collector = MagicMock()
-            mock_collector._toot_to_unified_post.return_value = mock_post
+            mock_collector.toot_to_unified_post.return_value = mock_post
             mock_col_cls.return_value = mock_collector
 
             mock_state = MagicMock()
@@ -566,7 +566,7 @@ class TestRetryCommand:
             ])
 
         mock_mastodon.status.assert_called_once_with(999)
-        mock_collector._toot_to_unified_post.assert_called_once_with(mock_raw_toot)
+        mock_collector.toot_to_unified_post.assert_called_once_with(mock_raw_toot)
         mock_dispatch.assert_called_once()
 
     def test_retry_only_updates_specified_platform_state(self, tmp_path):
@@ -589,7 +589,7 @@ class TestRetryCommand:
             mock_mastodon_cls.return_value = mock_mastodon
 
             mock_collector = MagicMock()
-            mock_collector._toot_to_unified_post.return_value = mock_post
+            mock_collector.toot_to_unified_post.return_value = mock_post
             mock_col_cls.return_value = mock_collector
 
             mock_state = MagicMock()
@@ -807,7 +807,7 @@ class TestRetryLockRelease:
             patch("scholarposter.cli.find_dotenv", return_value=""),
         ):
             mock_mastodon_cls.return_value.status.return_value = {}
-            mock_col_cls.return_value._toot_to_unified_post.return_value = mock_post
+            mock_col_cls.return_value.toot_to_unified_post.return_value = mock_post
             mock_state = MagicMock()
             mock_state.acquire_lock.return_value = True
             mock_state_cls.return_value = mock_state
@@ -1002,7 +1002,7 @@ class TestRetryDryRunDoesNotWriteState:
             patch("scholarposter.cli.find_dotenv", return_value=""),
         ):
             mock_mastodon_cls.return_value.status.return_value = {}
-            mock_col_cls.return_value._toot_to_unified_post.return_value = mock_post
+            mock_col_cls.return_value.toot_to_unified_post.return_value = mock_post
             mock_state = MagicMock()
             mock_state.acquire_lock.return_value = True
             mock_state_cls.return_value = mock_state
