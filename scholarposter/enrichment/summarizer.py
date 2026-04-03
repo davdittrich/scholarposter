@@ -1,4 +1,4 @@
-"""Text summarization backends: Gemini CLI, Ollama, and extractive (sumy)."""
+"""Text summarization backends: Gemini ACP, Lemonade, Ollama, and extractive (sumy)."""
 from __future__ import annotations
 
 import re

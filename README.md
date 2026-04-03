@@ -14,6 +14,37 @@ summarization, and paper discovery.
 - **Discover** new papers matching your interests via OpenAlex
 - **Notify** on failure via ntfy, Signal, or email
 
+## How it works
+
+```mermaid
+flowchart TD
+    A[Mastodon timeline] --> B[Fetch oldest unprocessed toot]
+    B --> C{Filters pass?}
+    C -->|no| D[Skip, advance state]
+    C -->|yes| E[Enrichment pipeline]
+
+    E --> E1[Unshorten URLs]
+    E1 --> E2{Content type?}
+    E2 -->|HTML| E3[OG tags + trafilatura body text]
+    E2 -->|PDF| E4[PyMuPDF metadata + text]
+    E3 & E4 --> E5[DOI detection from URL]
+    E5 --> E6[Crossref lookup + cache]
+    E6 --> E7{Summarize?}
+    E7 -->|yes| E8[Fallback chain]
+    E7 -->|no| F
+
+    E8 --> S1[Gemini ACP]
+    S1 -->|fail| S2[Lemonade]
+    S2 -->|fail| S3[Ollama]
+    S3 -->|fail| S4[Extractive]
+    S1 & S2 & S3 & S4 --> F
+
+    F[Enriched post] --> G{Platform}
+    G -->|Bluesky| H[Thread + facets + embed]
+    G -->|LinkedIn| I[Article card + image]
+    H & I --> J[Update state + bibliography]
+```
+
 ---
 
 ## Installation
@@ -27,7 +58,8 @@ cd scholarposter-src
 ```
 
 The script creates a virtualenv, installs dependencies, and scaffolds `config.toml`
-and `.env` from their examples. Re-running upgrades in place without overwriting config.
+and `.env` from their examples. Re-running upgrades in place without overwriting
+config.
 
 Verify:
 
@@ -143,9 +175,28 @@ Key sections:
 
 - `[mastodon]` — instance URL and credentials file
 - `[platforms.bluesky]` / `[platforms.linkedin]` — per-platform filters, media, hashtag rules
-- `[enrichment]` — DOI lookup, summarization, URL unshortening
+- `[enrichment]` — DOI lookup, summarization (4 backends), URL unshortening
 - `[[notifications.backends]]` — failure alerts (ntfy, signal, email)
 - `[logging]` / `[state]` — log rotation, state file paths
+
+State files (`state.json`, `cache.json`, `bibliography.json`, lock file) are resolved
+relative to the directory containing `config.toml`, so all commands operate on the
+same files regardless of working directory.
+
+---
+
+## Summarization
+
+scholarposter supports four summarization backends in a fallback chain:
+
+```
+gemini → lemonade → ollama → extractive
+```
+
+The extractive backend (sumy KL+LSA) is always available with no setup.
+For LLM-quality summaries, configure Lemonade (local, preferred) or Gemini (cloud).
+See [docs/summarization.md](docs/summarization.md) for setup instructions and model
+recommendations.
 
 ---
 
@@ -159,8 +210,8 @@ crontab -e
 */30 * * * * /home/user/scholarposter/.venv/bin/scholarposter run --config /home/user/scholarposter/config.toml >> /home/user/scholarposter/scholarposter.log 2>&1
 ```
 
-If using Gemini summarization, add a PATH line at the top of your crontab so cron
-can find the `gemini` binary:
+If using Gemini or Lemonade, add a PATH line at the top of your crontab so cron
+can find the binaries:
 
 ```
 PATH=/usr/local/bin:/usr/bin:/bin:/home/user/.local/bin
@@ -187,6 +238,41 @@ See [docs/configuration.md](docs/configuration.md) for Signal and email backends
 
 ---
 
+## Architecture
+
+```
+scholarposter/
+├── cli.py                  # Typer CLI — 7 commands
+├── config.py               # Pydantic config models + TOML loading
+├── models.py               # UnifiedPost, PostResult, BibliographyEntry
+├── state.py                # JSON state/cache, file locking, bibliography
+├── collector.py            # Mastodon toot fetching and HTML→text parsing
+├── filters.py              # Hashtag/content-type filtering, hashtag rules
+├── gemini_client.py        # Thin re-export from gemini-acp package
+├── bibliography.py         # BibTeX and Markdown export formatting
+├── discovery.py            # OpenAlex paper discovery
+├── migration.py            # Legacy lasttoot*.txt → state.json migration
+├── enrichment/
+│   ├── pipeline.py         # 5-stage enrichment orchestrator
+│   ├── url.py              # URL unshortening, content-type detection
+│   ├── html.py             # OG tag extraction, trafilatura body text
+│   ├── pdf.py              # PyMuPDF metadata + pymupdf4llm text
+│   ├── doi.py              # DOI regex detection + Crossref API lookup
+│   ├── summarizer.py       # 4 backends: Gemini ACP, Lemonade, Ollama, extractive
+│   └── media.py            # Image download, resize, JPEG conversion
+├── adapters/
+│   ├── base.py             # BaseAdapter ABC
+│   ├── bluesky.py          # AT Protocol posting with threading + facets
+│   └── linkedin.py         # Community Management API posting
+└── notifications/
+    ├── base.py             # BaseNotifier ABC
+    ├── ntfy.py             # ntfy.sh push notifications
+    ├── email.py            # SMTP email notifications
+    └── signal.py           # signal-cli REST API notifications
+```
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -194,7 +280,7 @@ See [docs/configuration.md](docs/configuration.md) for Signal and email backends
 | `Another instance is running` | Stale lock | `rm scholarposter.lock` |
 | No posts, no errors | All toots processed | `scholarposter status` to check |
 | `HTTP 401` on LinkedIn | Token expired (60-day TTL) | Re-run OAuth; see [docs/auth-linkedin.md](docs/auth-linkedin.md) |
-| Summarization falls back to extractive | Gemini/Ollama unreachable | Check PATH; verify Ollama running; see [docs/summarization.md](docs/summarization.md) |
+| Summarization falls back to extractive | LLM backends unreachable | Check PATH; verify Lemonade/Ollama running; see [docs/summarization.md](docs/summarization.md) |
 | Images downsampled | Source too large | Expected — Bluesky enforces ~976 KB blob limit |
 | `ModuleNotFoundError` | Wrong Python binary | Use full path: `.venv/bin/scholarposter` |
 | `Config not found` | Missing config.toml | Copy `config.toml.example` to `config.toml` |

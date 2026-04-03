@@ -106,7 +106,6 @@ Fallback is only to cheaper/simpler backends (no wrap-around).
 | Key | Default | Description |
 |-----|---------|-------------|
 | `max_sentences` | `5` | Maximum sentences in extractive summary |
-| `timeout_seconds` | `10` | *Deprecated — kept for config backward compatibility; not used at runtime* |
 
 ## `[enrichment.url_unshorten]`
 
@@ -173,3 +172,8 @@ Port 465 uses implicit TLS (SMTP_SSL). Other ports use capability-based STARTTLS
 | `state_file` | `"state.json"` | Per-platform toot tracking |
 | `cache_file` | `"cache.json"` | DOI/URL enrichment cache |
 | `lock_file` | `"scholarposter.lock"` | Prevents concurrent runs |
+
+State files are resolved relative to the directory containing `config.toml`, not the
+working directory. This ensures all commands (`run`, `retry`, `status`, `bibliography`,
+`enrich`, `discover`) read and write the same files regardless of where you invoke
+scholarposter from.

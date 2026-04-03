@@ -82,7 +82,6 @@ timeout_seconds = 30
 
 [enrichment.summarization.extractive]
 max_sentences = 5
-timeout_seconds = 10
 
 [enrichment.url_unshorten]
 enabled = true
