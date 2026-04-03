@@ -150,19 +150,60 @@ When no model is loaded on the server:
 3. Loads it with `lemonade load <model> --ctx-size <ctx_size>`
 4. Caches the model ID for subsequent calls (no redundant loading)
 
-The default `preferred_models` list prioritizes instruction-tuned models in the
-3B-14B parameter range — the sweet spot for summarization quality vs speed.
+The default `preferred_models` list is ordered CPU-first: smaller instruction-tuned
+models (3-4B) come first for fast CPU inference, with larger 8B models as options
+when GPU is available.
 
 ```toml
 [enrichment.summarization.lemonade]
-ctx_size = 8192                         # increase for longer papers (needs more VRAM)
-load_timeout_seconds = 180              # increase for slow hardware or downloads
+ctx_size = 8192
+load_timeout_seconds = 180
 preferred_models = [
-    "Phi-4-mini-instruct-GGUF",
-    "Qwen3-8B-GGUF",
-    "DeepSeek-Qwen3-8B-GGUF",
+    "Phi-4-mini-instruct-GGUF",         # 3.8B — best quality/size for CPU
+    "Qwen3-4B-Instruct-2507-GGUF",      # 4B — strongest fine-tuned performance
+    "Qwen3-8B-GGUF",                    # 8B — GPU recommended
+    "DeepSeek-Qwen3-8B-GGUF",           # 8B — GPU recommended
+    "Llama-3.2-3B-Instruct-GGUF",       # 3B — lightweight fallback
+    "Gemma-3-4b-it-GGUF",               # 4B — solid all-rounder
+    "Qwen3-1.7B-GGUF",                  # 1.7B — ultra-light
+    "Llama-3.2-1B-Instruct-GGUF",       # 1B — minimal hardware
 ]
 ```
+
+### Choosing a model
+
+The first downloaded model in `preferred_models` is auto-loaded. The default ranking
+is based on cross-referencing benchmark results from [MLCommons MLPerf](https://mlcommons.org/2025/09/small-llm-inference-5-1/),
+[DistilLabs 12-SLM benchmark](https://www.distillabs.ai/blog/we-benchmarked-12-small-language-models-across-8-tasks-to-find-the-best-base-model-for-fine-tuning/),
+and [HuggingFace model evaluations](https://huggingface.co/microsoft/Phi-4-mini-instruct),
+prioritizing instruction-following quality and CPU inference speed.
+
+| Tier | Model | Params | RAM (Q4_K_M) | Best for |
+|------|-------|--------|--------------|----------|
+| 1 (CPU) | Phi-4-mini-instruct-GGUF | 3.8B | ~2.5 GB | Best quality/size — beats 6-9B models on accuracy |
+| 1 (CPU) | Qwen3-4B-Instruct-2507-GGUF | 4B | ~2.8 GB | #1 in fine-tuned benchmarks, strong multilingual |
+| 2 (GPU) | Qwen3-8B-GGUF | 8B | ~5 GB | Strongest instruction-following at this tier |
+| 2 (GPU) | DeepSeek-Qwen3-8B-GGUF | 8B | ~5 GB | DeepSeek distillation quality |
+| 3 | Llama-3.2-3B-Instruct-GGUF | 3B | ~2 GB | 128K context, good instruction following |
+| 3 | Gemma-3-4b-it-GGUF | 4B | ~2.8 GB | Solid all-rounder |
+| 4 | Qwen3-1.7B-GGUF | 1.7B | ~1.2 GB | Rivals vintage 7B models |
+| 4 | Llama-3.2-1B-Instruct-GGUF | 1B | ~1.5 GB | Minimal hardware, still usable |
+
+**CPU-first rationale:** scholarposter runs as an unattended cron job. GPU may not be
+available or dedicated. Lemonade's llamacpp backend auto-selects CPU/GPU, but 3-4B
+models are fast on CPU-only while producing summaries nearly indistinguishable from
+larger models (summarization degrades less under quantization than code generation).
+
+**If you have a GPU:** Pull an 8B model (`lemonade pull Qwen3-8B-GGUF`) and it will
+be used automatically — it appears earlier in your downloaded list or you can reorder
+`preferred_models` in config.
+
+**Quantization:** All models use Q4_K_M quantization (the community consensus for
+best quality/speed tradeoff on CPU — retains 90-95% of full-precision quality).
+
+**Context window:** Default `ctx_size = 8192` is sufficient for most academic papers
+(prompt ~50 tokens + article 2000-6000 tokens + output 200 tokens). For very long
+papers, increase to `32768` (requires more RAM/VRAM).
 
 ### Available models
 

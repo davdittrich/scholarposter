@@ -48,11 +48,18 @@ class LemonadeSummarizationConfig(BaseModel):
     ctx_size: int = 8192  # context window for model loading (tokens)
     load_timeout_seconds: int = 180  # max time for model load (includes possible download)
     preferred_models: list[str] = [
-        "Phi-4-mini-instruct-GGUF",
-        "Qwen3-8B-GGUF",
-        "DeepSeek-Qwen3-8B-GGUF",
-        "Llama-3.2-3B-Instruct-GGUF",
-        "Gemma-3-4b-it-GGUF",
+        # Tier 1: Best quality/size for CPU (3-4B, instruction-tuned)
+        "Phi-4-mini-instruct-GGUF",         # 3.8B — beats 6-9B on accuracy benchmarks
+        "Qwen3-4B-Instruct-2507-GGUF",      # 4B — #1 in fine-tuned benchmarks
+        # Tier 2: Higher quality if GPU available (8B)
+        "Qwen3-8B-GGUF",                    # 8B — strongest instruction-following
+        "DeepSeek-Qwen3-8B-GGUF",           # 8B — DeepSeek distillation quality
+        # Tier 3: Lightweight fallbacks
+        "Llama-3.2-3B-Instruct-GGUF",       # 3B — 128K context, good instruction following
+        "Gemma-3-4b-it-GGUF",               # 4B — solid all-rounder
+        # Tier 4: Ultra-light (minimal hardware)
+        "Qwen3-1.7B-GGUF",                  # 1.7B — rivals 7B vintage models
+        "Llama-3.2-1B-Instruct-GGUF",       # 1B — last resort, still usable
     ]
 
 
