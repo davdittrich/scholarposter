@@ -55,9 +55,18 @@ model = ""  # e.g. "gemini-3-flash-preview"; empty = CLI default
 timeout_seconds = 30
 
 [enrichment.summarization.lemonade]
-model = ""  # empty = auto-detect from server; e.g. "user.DeepSeek-R1-Distill-Qwen-14B-GGUF"
+model = ""  # empty = auto-load best downloaded model
 host = "http://127.0.0.1:8000"
 timeout_seconds = 60
+ctx_size = 8192  # context window for model loading (tokens)
+load_timeout_seconds = 180  # max time to wait for model load
+preferred_models = [  # ordered preference for auto-load
+    "Phi-4-mini-instruct-GGUF",
+    "Qwen3-8B-GGUF",
+    "DeepSeek-Qwen3-8B-GGUF",
+    "Llama-3.2-3B-Instruct-GGUF",
+    "Gemma-3-4b-it-GGUF",
+]
 
 [enrichment.summarization.ollama]
 model = "gemma3:9b"

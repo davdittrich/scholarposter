@@ -86,9 +86,12 @@ Fallback is only to cheaper/simpler backends (no wrap-around).
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `model` | `""` | Model ID (empty = auto-detect first available from server) |
+| `model` | `""` | Model ID (empty = auto-load best downloaded model) |
 | `host` | `"http://127.0.0.1:8000"` | Lemonade server URL |
-| `timeout_seconds` | `60` | HTTP timeout (higher default for cold starts) |
+| `timeout_seconds` | `60` | Inference HTTP timeout |
+| `ctx_size` | `8192` | Context window for auto-loaded models (tokens) |
+| `load_timeout_seconds` | `180` | Max seconds for model loading |
+| `preferred_models` | (see example) | Ordered preference list for auto-load |
 
 ### `[enrichment.summarization.ollama]`
 

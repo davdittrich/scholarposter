@@ -139,15 +139,37 @@ host = "http://127.0.0.1:8000"
 timeout_seconds = 60                    # higher for cold starts
 ```
 
-When `model` is empty, scholarposter queries `/v1/models` and uses the first available
-model. The detected model is cached for the duration of the process.
+When `model` is empty, scholarposter automatically loads the best available model.
+
+### Auto-loading models
+
+When no model is loaded on the server:
+
+1. Queries `lemonade list --downloaded` for available models
+2. Picks the first match from `preferred_models` (or first downloaded if no match)
+3. Loads it with `lemonade load <model> --ctx-size <ctx_size>`
+4. Caches the model ID for subsequent calls (no redundant loading)
+
+The default `preferred_models` list prioritizes instruction-tuned models in the
+3B-14B parameter range — the sweet spot for summarization quality vs speed.
+
+```toml
+[enrichment.summarization.lemonade]
+ctx_size = 8192                         # increase for longer papers (needs more VRAM)
+load_timeout_seconds = 180              # increase for slow hardware or downloads
+preferred_models = [
+    "Phi-4-mini-instruct-GGUF",
+    "Qwen3-8B-GGUF",
+    "DeepSeek-Qwen3-8B-GGUF",
+]
+```
 
 ### Available models
 
 ```bash
-lemonade list
-# or via API:
-curl http://127.0.0.1:8000/v1/models
+lemonade list               # all available (Downloaded column shows Yes/No)
+lemonade list --downloaded  # only downloaded
+curl http://127.0.0.1:8000/v1/models  # currently loaded
 ```
 
 ### Cron PATH fix
