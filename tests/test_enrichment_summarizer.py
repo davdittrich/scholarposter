@@ -213,6 +213,30 @@ class TestBuildBackendOrder:
         assert _build_backend_order("gemini") == ["gemini", "ollama", "extractive"]
 
 
+class TestCollectSentencesBoundary:
+    def test_no_trailing_space(self) -> None:
+        """_collect_sentences uses join (no trailing space).
+
+        This is more correct than the old concatenation which had a trailing
+        space that inflated len() by 1, causing the while-loop to over-reduce
+        at exact boundary lengths.
+        """
+        from scholarposter.enrichment.summarizer import _collect_sentences
+
+        class FakeSentence:
+            def __init__(self, text):
+                self._text = text
+            def __str__(self):
+                return self._text
+
+        sentences = [FakeSentence("A" * 50), FakeSentence("B" * 50)]
+        result = _collect_sentences(sentences, min_chars=0)
+        assert not result.endswith(" ")
+        # join produces "AAA...A BBB...B" — 101 chars (50 + 1 space + 50)
+        # Old code would have produced "AAA...A BBB...B " — 102 chars
+        assert len(result) == 101
+
+
 class TestSummarizeFallbackLogging:
     def test_fallback_warning_logged_when_primary_backend_fails(self) -> None:
         from loguru import logger

@@ -110,3 +110,15 @@ class PlatformState(BaseModel):
     last_status: Optional[str] = None
     last_posted_at: Optional[datetime] = None
     last_error: Optional[str] = None
+
+
+class BibliographyEntry(BaseModel):
+    doi: str
+    title: str
+    authors: list[str] = []
+    abstract: str = ""
+    url: str
+    shared_at: datetime
+    publication_year: Optional[int] = None
+    platforms: list[str] = []
+    source_toot_id: str = ""  # traceability: links entry back to source toot

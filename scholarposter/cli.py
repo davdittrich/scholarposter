@@ -15,10 +15,10 @@ from loguru import logger
 from mastodon import Mastodon
 
 from scholarposter.collector import MastodonCollector
-from scholarposter.config import NotificationBackendConfig, load_config
+from scholarposter.config import EnrichmentConfig, NotificationBackendConfig, load_config
 from scholarposter.enrichment.pipeline import EnrichmentPipeline
 from scholarposter.filters import evaluate_filters
-from scholarposter.models import PlatformState, PostResult, PostStatus
+from scholarposter.models import BibliographyEntry, PlatformState, PostResult, PostStatus, UnifiedPost
 from scholarposter.notifications.base import BaseNotifier
 from scholarposter.notifications.ntfy import NtfyNotifier
 from scholarposter.state import StateManager
@@ -52,6 +52,28 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None,
     if log_file:
         logger.add(log_file, level=level, rotation=rotation, retention=retention,
                    filter=_redact_filter)
+
+
+def _load_config_and_state(config: Path) -> tuple[StateManager, Optional[Any]]:
+    """Load config and construct StateManager.
+
+    Returns (state_mgr, cfg). On config failure, returns (StateManager(), None).
+    On StateManager failure, returns (StateManager(), cfg) — config is preserved.
+    """
+    try:
+        cfg = load_config(config)
+    except Exception:
+        return StateManager(), None
+    try:
+        state_dir = config.parent.resolve()
+        state_mgr = StateManager(
+            state_dir=state_dir,
+            state_file=Path(cfg.state.state_file).name,
+            cache_file=Path(cfg.state.cache_file).name,
+        )
+        return state_mgr, cfg
+    except Exception:
+        return StateManager(), cfg
 
 
 def _check_env_permissions(cfg=None) -> None:
@@ -215,6 +237,29 @@ def run(
                     last_posted_at=posted_at,
                     last_error=result.error,
                 ))
+
+                # Append DOI-enriched links to bibliography
+                if result.status == PostStatus.POSTED:
+                    for link in post.links:
+                        if link.doi and link.title:
+                            authors: list[str] = []
+                            pub_year: Optional[int] = None
+                            cached = state_mgr.cache_get(f"doi:{link.doi}")
+                            if cached:
+                                authors = cached.get("authors", [])
+                                pub_year = cached.get("year")
+                            entry = BibliographyEntry(
+                                doi=link.doi,
+                                title=link.title,
+                                authors=authors,
+                                abstract=link.description or "",
+                                url=link.resolved_url or link.original_url,
+                                shared_at=datetime.now(timezone.utc),
+                                publication_year=pub_year,
+                                platforms=[plat],
+                                source_toot_id=post.source_id,
+                            )
+                            state_mgr.append_bibliography(entry)
 
             if result.status == PostStatus.POSTED:
                 logger.info(f"[{plat}] Posted {post.source_id}: {result.post_url}")
@@ -451,3 +496,149 @@ def _print_masked_config(data: Any, indent: int = 0) -> None:
                         typer.echo(f"{prefix}{bullet}{key}: {value}")
             else:
                 typer.echo(f"{prefix}- {item}")
+
+
+@app.command()
+def bibliography(
+    output_format: str = typer.Option("bibtex", "--format", help="bibtex, json, or markdown"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
+    config: Path = typer.Option(Path("config.toml"), "--config"),
+) -> None:
+    """Export bibliography of shared papers."""
+    state_mgr, _ = _load_config_and_state(config)
+    raw = state_mgr.load_bibliography()
+    if not raw:
+        typer.echo("No bibliography entries yet.")
+        return
+
+    entries: list[BibliographyEntry] = []
+    for d in raw:
+        try:
+            entries.append(BibliographyEntry.model_validate(d))
+        except Exception as e:
+            logger.warning(f"Skipping malformed bibliography entry: {e}")
+    if not entries:
+        typer.echo("No valid bibliography entries found.")
+        return
+
+    if output_format == "bibtex":
+        from scholarposter.bibliography import to_bibtex
+        text = to_bibtex(entries)
+    elif output_format == "markdown":
+        from scholarposter.bibliography import to_markdown
+        text = to_markdown(entries)
+    elif output_format == "json":
+        import json as json_mod
+        text = json_mod.dumps([e.model_dump(mode="json") for e in entries], indent=2, default=str)
+    else:
+        typer.echo(f"Unknown format: {output_format}", err=True)
+        raise typer.Exit(code=2)
+
+    if output:
+        output.write_text(text)
+        typer.echo(f"Written to {output}")
+    else:
+        typer.echo(text)
+
+
+@app.command()
+def enrich(
+    url: str = typer.Argument(help="URL to enrich"),
+    config: Path = typer.Option(Path("config.toml"), "--config"),
+    summarize: bool = typer.Option(True, help="Include summary"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """Enrich a URL: resolve, extract metadata, look up DOI, summarize."""
+    state_mgr, cfg = _load_config_and_state(config)
+    enrichment_cfg = cfg.enrichment if cfg else EnrichmentConfig()
+
+    if not summarize:
+        enrichment_cfg = enrichment_cfg.model_copy(
+            update={"summarization": enrichment_cfg.summarization.model_copy(
+                update={"enabled": False}
+            )}
+        )
+
+    pipeline = EnrichmentPipeline(config=enrichment_cfg, cache=state_mgr)
+
+    dummy_post = UnifiedPost(
+        source_id="enrich-cli",
+        text="",
+        source_url="",
+        created_at=datetime.now(timezone.utc),
+        urls=[url],
+    )
+    enriched = pipeline.enrich(dummy_post)
+
+    link = enriched.links[0] if enriched.links else None
+    if link is None:
+        typer.echo("No enrichment data found.", err=True)
+        raise typer.Exit(code=1)
+
+    has_metadata = any([link.title, link.doi, link.description, link.summary])
+
+    if json_output:
+        import json as json_mod
+        typer.echo(json_mod.dumps(
+            link.model_dump(mode="json", exclude={"body_text", "thumbnail_bytes"}),
+            indent=2, default=str,
+        ))
+    else:
+        if link.title:
+            typer.echo(f"Title:    {link.title}")
+        if link.doi:
+            typer.echo(f"DOI:      {link.doi}")
+        if link.description:
+            desc = link.description[:200] + ("…" if len(link.description) > 200 else "")
+            typer.echo(f"Abstract: {desc}")
+        if link.resolved_url and link.resolved_url != link.original_url:
+            typer.echo(f"Resolved: {link.resolved_url}")
+        if link.summary:
+            typer.echo(f"\nSummary:\n{link.summary}")
+        if not has_metadata:
+            typer.echo("No structured metadata found.")
+
+
+@app.command()
+def discover(
+    config: Path = typer.Option(Path("config.toml"), "--config"),
+    days: int = typer.Option(30, help="Look back N days"),
+    limit: int = typer.Option(10, help="Max suggestions"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """Discover recent papers matching your sharing interests."""
+    state_mgr, cfg = _load_config_and_state(config)
+    email = cfg.enrichment.crossref.etiquette_email if cfg else ""
+
+    bib = state_mgr.load_bibliography()
+    if not bib:
+        typer.echo("No bibliography found. Share papers first with `scholarposter run`.", err=True)
+        raise typer.Exit(code=1)
+
+    from scholarposter.discovery import extract_interests, discover_papers
+    interests = extract_interests(bib)
+    if not interests["top_authors"]:
+        typer.echo("Not enough data. Share more papers with DOIs.", err=True)
+        raise typer.Exit(code=1)
+
+    if len(interests["top_authors"]) < 3:
+        typer.echo("Note: few authors in bibliography — results may be limited.\n", err=True)
+
+    papers = discover_papers(interests, etiquette_email=email, max_results=limit, days=days)
+    if not papers:
+        typer.echo("No new papers found matching your interests.")
+        return
+
+    if json_output:
+        import json as json_mod
+        typer.echo(json_mod.dumps(papers, indent=2))
+    else:
+        typer.echo(f"Paper Discovery — {len(papers)} suggestions\n")
+        for i, p in enumerate(papers, 1):
+            authors = ", ".join(p["authors"][:3])
+            typer.echo(f"{i}. \"{p['title']}\"")
+            typer.echo(f"   {authors} | {p['publication_date']} | Cited: {p['cited_by_count']}")
+            typer.echo(f"   DOI: {p['doi']}")
+            if p.get("open_access_url"):
+                typer.echo(f"   OA: {p['open_access_url']}")
+            typer.echo()

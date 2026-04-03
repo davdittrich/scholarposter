@@ -7,7 +7,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from scholarposter.state import StateManager
-from scholarposter.models import PlatformState
+from scholarposter.models import BibliographyEntry, PlatformState
 
 
 @pytest.fixture
@@ -278,3 +278,71 @@ class TestCacheGetSingleLoad:
             mgr.cache_get("k")
         # _prune_cache calls _load_cache once; cache_get must not add a second call
         mock_load.assert_called_once()
+
+
+def _make_entry(**kwargs) -> BibliographyEntry:
+    defaults = dict(
+        doi="10.1000/test",
+        title="Test Paper",
+        url="https://doi.org/10.1000/test",
+        shared_at=datetime(2024, 3, 1, tzinfo=timezone.utc),
+        platforms=["bluesky"],
+    )
+    defaults.update(kwargs)
+    return BibliographyEntry(**defaults)
+
+
+class TestBibliography:
+    def test_load_bibliography_missing_file(self, mgr):
+        """Returns empty list when bibliography.json does not exist."""
+        assert mgr.load_bibliography() == []
+
+    def test_load_bibliography_corrupt_json(self, mgr, state_dir):
+        """Returns empty list and logs a warning on corrupt JSON."""
+        bib_path = state_dir / "bibliography.json"
+        bib_path.write_text("{not valid json")
+        from loguru import logger
+        messages = []
+        lid = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
+        try:
+            result = mgr.load_bibliography()
+        finally:
+            logger.remove(lid)
+        assert result == []
+        assert any("corrupt" in m for m in messages)
+
+    def test_append_bibliography_new_entry(self, mgr, state_dir):
+        """Appending a new entry writes it to bibliography.json."""
+        entry = _make_entry()
+        with mgr.lock():
+            mgr.append_bibliography(entry)
+        bib = mgr.load_bibliography()
+        assert len(bib) == 1
+        assert bib[0]["doi"] == "10.1000/test"
+        assert bib[0]["title"] == "Test Paper"
+        assert "bluesky" in bib[0]["platforms"]
+
+    def test_append_bibliography_dedup_merges_platforms(self, mgr):
+        """Appending the same DOI twice merges platforms instead of duplicating entries."""
+        entry1 = _make_entry(platforms=["bluesky"])
+        entry2 = _make_entry(platforms=["linkedin"])
+        with mgr.lock():
+            mgr.append_bibliography(entry1)
+            mgr.append_bibliography(entry2)
+        bib = mgr.load_bibliography()
+        assert len(bib) == 1
+        platforms = set(bib[0]["platforms"])
+        assert platforms == {"bluesky", "linkedin"}
+
+    def test_append_bibliography_with_malformed_existing(self, mgr, state_dir):
+        """Existing entry missing 'doi' key must not crash; new entry is still appended."""
+        bib_path = state_dir / "bibliography.json"
+        # Write an entry without 'doi'
+        with open(bib_path, "w") as f:
+            json.dump([{"title": "Orphan", "platforms": []}], f)
+        entry = _make_entry(doi="10.9999/new")
+        with mgr.lock():
+            mgr.append_bibliography(entry)
+        bib = mgr.load_bibliography()
+        dois = [e.get("doi") for e in bib]
+        assert "10.9999/new" in dois
