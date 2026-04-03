@@ -6,13 +6,18 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+import respx
 
 from scholarposter.config import SummarizationConfig
+from scholarposter.gemini_client import summarize_via_gemini
 from scholarposter.enrichment.summarizer import (
-    summarize_gemini,
+    summarize_lemonade,
     summarize_ollama,
     summarize_extractive,
     summarize,
+    _ensure_lemonade_model,
+    _get_downloaded_models,
+    _load_lemonade_model,
 )
 
 MULTI_SENTENCE_TEXT = (
@@ -29,40 +34,34 @@ MULTI_SENTENCE_TEXT = (
 )
 
 
-class TestSummarizeGemini:
-    def test_returns_stdout_on_success(self) -> None:
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "This is a summary.\n"
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
-            result = summarize_gemini("some text", prompt="Summarize:", timeout=10)
-        assert result == "This is a summary."
-        mock_run.assert_called_once()
-        args = mock_run.call_args[0][0]
-        assert args[0] == "gemini"
-        assert "-p" in args
-        assert "Summarize:" in args
+class TestSummarizeGeminiIntegration:
+    """Tests that summarize() correctly delegates to summarize_via_gemini."""
 
-    def test_returns_none_on_timeout(self) -> None:
-        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gemini", 10)):
-            result = summarize_gemini("some text", prompt="Summarize:", timeout=10)
-        assert result is None
+    def test_gemini_backend_calls_summarize_via_gemini(self) -> None:
+        config = SummarizationConfig(backend="gemini", max_chars=500)
+        config.gemini.model = "gemini-3-flash-preview"
+        with patch("scholarposter.enrichment.summarizer.summarize_via_gemini",
+                   return_value="gemini summary") as mock:
+            result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
+                             prompt="Sum:", config=config)
+        assert result == "gemini summary"
+        mock.assert_called_once()
+        call_kwargs = mock.call_args
+        assert call_kwargs[1]["model"] == "gemini-3-flash-preview"
 
-    def test_returns_none_on_nonzero_returncode(self) -> None:
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        with patch("subprocess.run", return_value=mock_result):
-            result = summarize_gemini("some text", prompt="Summarize:", timeout=10)
-        assert result is None
+    def test_gemini_backend_returns_none_falls_through_to_lemonade(self) -> None:
+        config = SummarizationConfig(backend="gemini", max_chars=500)
+        with (
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
+        ):
+            result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
+                             prompt="Sum:", config=config)
+        assert result == "lemonade result"
 
-    def test_returns_none_on_empty_stdout(self) -> None:
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "   "
-        with patch("subprocess.run", return_value=mock_result):
-            result = summarize_gemini("some text", prompt="Summarize:", timeout=10)
-        assert result is None
+    def test_gemini_model_empty_by_default(self) -> None:
+        config = SummarizationConfig(backend="gemini", max_chars=500)
+        assert config.gemini.model == ""
 
 
 class TestSummarizeOllama:
@@ -152,23 +151,24 @@ class TestSummarizeExtractive:
 class TestSummarize:
     def test_uses_preferred_backend_first(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
-        with patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value="gemini result"):
+        with patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value="gemini result"):
             result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         assert result == "gemini result"
 
-    def test_falls_back_to_ollama_when_gemini_returns_none(self) -> None:
+    def test_falls_back_to_lemonade_when_gemini_returns_none(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
-            patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value=None),
-            patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
         ):
             result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
-        assert result == "ollama result"
+        assert result == "lemonade result"
 
-    def test_falls_back_to_extractive_when_ollama_returns_none(self) -> None:
+    def test_falls_back_to_extractive_when_all_llm_return_none(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
-            patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value="extractive result"),
         ):
@@ -207,10 +207,14 @@ class TestBuildBackendOrder:
         # extractive is last: no backends after it
         assert _build_backend_order("extractive") == ["extractive"]
 
-    def test_build_backend_order_gemini_unchanged(self) -> None:
+    def test_build_backend_order_gemini_full_chain(self) -> None:
         from scholarposter.enrichment.summarizer import _build_backend_order
-        # gemini is first: full list, unchanged
-        assert _build_backend_order("gemini") == ["gemini", "ollama", "extractive"]
+        # gemini is first: full chain including lemonade
+        assert _build_backend_order("gemini") == ["gemini", "lemonade", "ollama", "extractive"]
+
+    def test_build_backend_order_lemonade(self) -> None:
+        from scholarposter.enrichment.summarizer import _build_backend_order
+        assert _build_backend_order("lemonade") == ["lemonade", "ollama", "extractive"]
 
 
 class TestCollectSentencesBoundary:
@@ -245,13 +249,13 @@ class TestSummarizeFallbackLogging:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         try:
             with (
-                patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value=None),
-                patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
+                patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+                patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
             ):
                 summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         finally:
             logger.remove(lid)
-        assert any("ollama" in m for m in messages), f"Expected fallback warning mentioning 'ollama', got: {messages}"
+        assert any("lemonade" in m for m in messages), f"Expected fallback warning mentioning 'lemonade', got: {messages}"
 
     def test_no_fallback_warning_when_primary_backend_succeeds(self) -> None:
         from loguru import logger
@@ -259,8 +263,200 @@ class TestSummarizeFallbackLogging:
         lid = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
         config = SummarizationConfig(backend="gemini", max_chars=500)
         try:
-            with patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value="gemini result"):
+            with patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value="gemini result"):
                 summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         finally:
             logger.remove(lid)
         assert not any("falling back" in m for m in messages), f"Unexpected fallback warning: {messages}"
+
+
+class TestSummarizeLemonade:
+    @respx.mock
+    def test_returns_content_on_success(self) -> None:
+        import respx as _respx
+        _respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
+            return_value=httpx.Response(200, json={
+                "choices": [{"message": {"content": "Test summary."}}]
+            })
+        )
+        result = summarize_lemonade("text", model="test-model", host="http://127.0.0.1:8000",
+                                    prompt="Summarize:", timeout=10)
+        assert result == "Test summary."
+
+    @respx.mock
+    def test_returns_none_on_500(self) -> None:
+        import respx as _respx
+        _respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
+            return_value=httpx.Response(500, text="Internal Server Error")
+        )
+        result = summarize_lemonade("text", model="test-model", host="http://127.0.0.1:8000",
+                                    prompt="Summarize:", timeout=10)
+        assert result is None
+
+    @respx.mock
+    def test_returns_none_on_timeout(self) -> None:
+        import respx as _respx
+        _respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
+            side_effect=httpx.TimeoutException("timeout")
+        )
+        result = summarize_lemonade("text", model="test-model", host="http://127.0.0.1:8000",
+                                    prompt="Summarize:", timeout=1)
+        assert result is None
+
+    @respx.mock
+    def test_auto_detects_model_when_empty(self) -> None:
+        import respx as _respx
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = None  # reset cache
+        _respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={
+                "data": [{"id": "auto-detected-model"}]
+            })
+        )
+        _respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
+            return_value=httpx.Response(200, json={
+                "choices": [{"message": {"content": "Auto summary."}}]
+            })
+        )
+        result = summarize_lemonade("text", model="", host="http://127.0.0.1:8000",
+                                    prompt="Summarize:", timeout=10)
+        assert result == "Auto summary."
+        _mod._cached_lemonade_model = None  # cleanup
+
+    def test_ensure_lemonade_model_returns_cached(self) -> None:
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = "cached-model"
+        result = _ensure_lemonade_model("http://127.0.0.1:8000", [], 8192)
+        assert result == "cached-model"
+        _mod._cached_lemonade_model = None
+
+    def test_config_accepts_lemonade_backend(self) -> None:
+        cfg = SummarizationConfig(backend="lemonade")
+        assert cfg.backend == "lemonade"
+        assert cfg.lemonade.host == "http://127.0.0.1:8000"
+        assert cfg.lemonade.ctx_size == 8192
+        assert cfg.lemonade.load_timeout_seconds == 180
+        assert len(cfg.lemonade.preferred_models) > 0
+
+
+class TestLemonadeAutoLoad:
+    def test_get_downloaded_models_no_binary(self) -> None:
+        with patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil:
+            mock_shutil.which.return_value = None
+            result = _get_downloaded_models()
+        assert result == []
+
+    def test_get_downloaded_models_parses_cli_output(self) -> None:
+        cli_output = (
+            "Model Name                              Downloaded  Details\n"
+            "----------------------------------------------------------------------------------------------------\n"
+            "Phi-4-mini-instruct-GGUF                 Yes         llamacpp\n"
+            "Qwen3-8B-GGUF                            No          llamacpp\n"
+            "user.DeepSeek-R1-GGUF                    Yes         llamacpp\n"
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = cli_output
+        with patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil, \
+             patch("scholarposter.enrichment.summarizer.subprocess") as mock_sub:
+            mock_shutil.which.return_value = "/usr/bin/lemonade"
+            mock_sub.run.return_value = mock_result
+            mock_sub.TimeoutExpired = subprocess.TimeoutExpired
+            result = _get_downloaded_models()
+        assert "Phi-4-mini-instruct-GGUF" in result
+        assert "user.DeepSeek-R1-GGUF" in result
+        assert "Qwen3-8B-GGUF" not in result
+
+    def test_load_lemonade_model_returns_false_on_nonzero_returncode(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("scholarposter.enrichment.summarizer.subprocess") as mock_sub:
+            mock_sub.run.return_value = mock_result
+            mock_sub.TimeoutExpired = subprocess.TimeoutExpired
+            result = _load_lemonade_model("test-model", 8192, "http://127.0.0.1:8000")
+        assert result is False
+
+    @respx.mock
+    def test_ensure_lemonade_model_prefers_configured_model(self) -> None:
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = None
+        # Server has no model loaded
+        respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={"data": []})
+        )
+        mock_result_list = MagicMock()
+        mock_result_list.returncode = 0
+        mock_result_list.stdout = (
+            "Model Name                              Downloaded  Details\n"
+            "----\n"
+            "Phi-4-mini-instruct-GGUF                 Yes         llamacpp\n"
+            "Qwen3-8B-GGUF                            Yes         llamacpp\n"
+        )
+        mock_result_load = MagicMock()
+        mock_result_load.returncode = 0
+        # After load, server has the model
+        respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={
+                "data": [{"id": "Phi-4-mini-instruct-GGUF"}]
+            })
+        )
+        with patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil, \
+             patch("scholarposter.enrichment.summarizer.subprocess") as mock_sub:
+            mock_shutil.which.return_value = "/usr/bin/lemonade"
+            mock_sub.run.side_effect = [mock_result_list, mock_result_load]
+            mock_sub.TimeoutExpired = subprocess.TimeoutExpired
+            result = _ensure_lemonade_model(
+                "http://127.0.0.1:8000",
+                ["Phi-4-mini-instruct-GGUF", "Qwen3-8B-GGUF"],
+                8192,
+            )
+        assert result == "Phi-4-mini-instruct-GGUF"
+        _mod._cached_lemonade_model = None
+
+    @respx.mock
+    def test_ensure_with_user_prefix_matches_preferred(self) -> None:
+        """CLI output with 'user.' prefix should still match preferred_models."""
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = None
+        respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={"data": []})
+        )
+        mock_result_list = MagicMock()
+        mock_result_list.returncode = 0
+        mock_result_list.stdout = (
+            "Model Name                              Downloaded  Details\n"
+            "----\n"
+            "user.Phi-4-mini-instruct-GGUF            Yes         llamacpp\n"
+        )
+        mock_result_load = MagicMock()
+        mock_result_load.returncode = 0
+        respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={
+                "data": [{"id": "user.Phi-4-mini-instruct-GGUF"}]
+            })
+        )
+        with patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil, \
+             patch("scholarposter.enrichment.summarizer.subprocess") as mock_sub:
+            mock_shutil.which.return_value = "/usr/bin/lemonade"
+            mock_sub.run.side_effect = [mock_result_list, mock_result_load]
+            mock_sub.TimeoutExpired = subprocess.TimeoutExpired
+            # preferred_models uses bare name without "user." prefix
+            result = _ensure_lemonade_model(
+                "http://127.0.0.1:8000",
+                ["Phi-4-mini-instruct-GGUF"],
+                8192,
+            )
+        # Should match despite user. prefix
+        assert "Phi-4-mini-instruct-GGUF" in result
+        _mod._cached_lemonade_model = None
+
+    def test_ensure_no_downloaded_models_returns_empty(self) -> None:
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = None
+        with patch("scholarposter.enrichment.summarizer.httpx") as mock_httpx, \
+             patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil:
+            mock_httpx.get.return_value = MagicMock(json=lambda: {"data": []})
+            mock_shutil.which.return_value = None  # no lemonade binary
+            result = _ensure_lemonade_model("http://127.0.0.1:8000", [], 8192)
+        assert result == ""
+        _mod._cached_lemonade_model = None

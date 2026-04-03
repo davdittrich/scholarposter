@@ -95,10 +95,15 @@ Next steps:
        Bluesky: BLUESKY_EMAIL and BLUESKY_PASSWORD (App Password)
        LinkedIn: see docs/auth-linkedin.md
 
-  4. Test:
+  4. (Optional) Set up summarization:
+       Lemonade (local LLM, recommended):  lemonade status && lemonade pull Phi-4-mini-instruct-GGUF
+       Gemini CLI (cloud):                 $VENV/bin/pip install scholarposter[gemini] && gemini auth login
+       See docs/summarization.md for details.
+
+  5. Test:
        $VENV/bin/scholarposter run --config $DEST_DIR/config.toml --dry-run
 
-  5. Add to cron (crontab -e):
+  6. Add to cron (crontab -e):
        */30 * * * * $VENV/bin/scholarposter run --config $DEST_DIR/config.toml >> $DEST_DIR/scholarposter.log 2>&1
 
 To upgrade: re-run this script with the same DEST_DIR.

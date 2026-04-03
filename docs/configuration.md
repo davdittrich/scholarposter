@@ -68,7 +68,7 @@ backend setup.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | |
-| `backend` | `"extractive"` | `"gemini"`, `"ollama"`, or `"extractive"` |
+| `backend` | `"extractive"` | `"gemini"`, `"lemonade"`, `"ollama"`, or `"extractive"` |
 | `max_chars` | `500` | Truncate summary to this length |
 | `prompt` | (academic summary prompt) | System prompt sent to Gemini/Ollama |
 
@@ -79,7 +79,19 @@ Fallback is only to cheaper/simpler backends (no wrap-around).
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `timeout_seconds` | `30` | Subprocess timeout for Gemini CLI |
+| `model` | `""` | Gemini model name (empty = CLI default); e.g. `"gemini-3-flash-preview"` |
+| `timeout_seconds` | `30` | ACP session timeout for Gemini CLI |
+
+### `[enrichment.summarization.lemonade]`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `model` | `""` | Model ID (empty = auto-load best downloaded model) |
+| `host` | `"http://127.0.0.1:8000"` | Lemonade server URL |
+| `timeout_seconds` | `60` | Inference HTTP timeout |
+| `ctx_size` | `8192` | Context window for auto-loaded models (tokens) |
+| `load_timeout_seconds` | `180` | Max seconds for model loading |
+| `preferred_models` | (see example) | Ordered preference list for auto-load |
 
 ### `[enrichment.summarization.ollama]`
 

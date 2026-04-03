@@ -37,7 +37,30 @@ class PlatformConfig(BaseModel):
 
 
 class GeminiSummarizationConfig(BaseModel):
+    model: str = ""  # empty = CLI default; e.g. "gemini-3-flash-preview"
     timeout_seconds: int = 30
+
+
+class LemonadeSummarizationConfig(BaseModel):
+    model: str = ""  # empty = auto-detect/auto-load best downloaded model
+    host: str = "http://127.0.0.1:8000"
+    timeout_seconds: int = 60  # inference timeout
+    ctx_size: int = 8192  # context window for model loading (tokens)
+    load_timeout_seconds: int = 180  # max time for model load (includes possible download)
+    preferred_models: list[str] = [
+        # Tier 1: Best quality/size for CPU (3-4B, instruction-tuned)
+        "Phi-4-mini-instruct-GGUF",         # 3.8B — beats 6-9B on accuracy benchmarks
+        "Qwen3-4B-Instruct-2507-GGUF",      # 4B — #1 in fine-tuned benchmarks
+        # Tier 2: Higher quality if GPU available (8B)
+        "Qwen3-8B-GGUF",                    # 8B — strongest instruction-following
+        "DeepSeek-Qwen3-8B-GGUF",           # 8B — DeepSeek distillation quality
+        # Tier 3: Lightweight fallbacks
+        "Llama-3.2-3B-Instruct-GGUF",       # 3B — 128K context, good instruction following
+        "Gemma-3-4b-it-GGUF",               # 4B — solid all-rounder
+        # Tier 4: Ultra-light (minimal hardware)
+        "Qwen3-1.7B-GGUF",                  # 1.7B — rivals 7B vintage models
+        "Llama-3.2-1B-Instruct-GGUF",       # 1B — last resort, still usable
+    ]
 
 
 class OllamaSummarizationConfig(BaseModel):
@@ -53,13 +76,14 @@ class ExtractiveSummarizationConfig(BaseModel):
 
 class SummarizationConfig(BaseModel):
     enabled: bool = True
-    backend: Literal["gemini", "ollama", "extractive"] = "extractive"
+    backend: Literal["gemini", "lemonade", "ollama", "extractive"] = "extractive"
     max_chars: int = 500
     prompt: str = (
         "Summarize this academic paper/article in 2-3 sentences for a social media post. "
         "Focus on the key finding and methodology. Be concise and precise."
     )
     gemini: GeminiSummarizationConfig = GeminiSummarizationConfig()
+    lemonade: LemonadeSummarizationConfig = LemonadeSummarizationConfig()
     ollama: OllamaSummarizationConfig = OllamaSummarizationConfig()
     extractive: ExtractiveSummarizationConfig = ExtractiveSummarizationConfig()
 
