@@ -41,6 +41,12 @@ class GeminiSummarizationConfig(BaseModel):
     timeout_seconds: int = 30
 
 
+class LemonadeSummarizationConfig(BaseModel):
+    model: str = ""  # empty = auto-detect first available from server
+    host: str = "http://127.0.0.1:8000"
+    timeout_seconds: int = 60  # higher default for cold starts
+
+
 class OllamaSummarizationConfig(BaseModel):
     model: str = "gemma3:9b"
     host: str = "http://localhost:11434"
@@ -54,13 +60,14 @@ class ExtractiveSummarizationConfig(BaseModel):
 
 class SummarizationConfig(BaseModel):
     enabled: bool = True
-    backend: Literal["gemini", "ollama", "extractive"] = "extractive"
+    backend: Literal["gemini", "lemonade", "ollama", "extractive"] = "extractive"
     max_chars: int = 500
     prompt: str = (
         "Summarize this academic paper/article in 2-3 sentences for a social media post. "
         "Focus on the key finding and methodology. Be concise and precise."
     )
     gemini: GeminiSummarizationConfig = GeminiSummarizationConfig()
+    lemonade: LemonadeSummarizationConfig = LemonadeSummarizationConfig()
     ollama: OllamaSummarizationConfig = OllamaSummarizationConfig()
     extractive: ExtractiveSummarizationConfig = ExtractiveSummarizationConfig()
 

@@ -5,13 +5,16 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+import respx
 
 from scholarposter.config import SummarizationConfig
 from scholarposter.gemini_client import summarize_via_gemini
 from scholarposter.enrichment.summarizer import (
+    summarize_lemonade,
     summarize_ollama,
     summarize_extractive,
     summarize,
+    _detect_lemonade_model,
 )
 
 MULTI_SENTENCE_TEXT = (
@@ -43,15 +46,15 @@ class TestSummarizeGeminiIntegration:
         call_kwargs = mock.call_args
         assert call_kwargs[1]["model"] == "gemini-3-flash-preview"
 
-    def test_gemini_backend_returns_none_falls_through(self) -> None:
+    def test_gemini_backend_returns_none_falls_through_to_lemonade(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
             patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
-            patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
+            patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
         ):
             result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
                              prompt="Sum:", config=config)
-        assert result == "ollama result"
+        assert result == "lemonade result"
 
     def test_gemini_model_empty_by_default(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
@@ -149,19 +152,20 @@ class TestSummarize:
             result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         assert result == "gemini result"
 
-    def test_falls_back_to_ollama_when_gemini_returns_none(self) -> None:
+    def test_falls_back_to_lemonade_when_gemini_returns_none(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
             patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
-            patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
+            patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
         ):
             result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
-        assert result == "ollama result"
+        assert result == "lemonade result"
 
-    def test_falls_back_to_extractive_when_ollama_returns_none(self) -> None:
+    def test_falls_back_to_extractive_when_all_llm_return_none(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
             patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value="extractive result"),
         ):
@@ -200,10 +204,14 @@ class TestBuildBackendOrder:
         # extractive is last: no backends after it
         assert _build_backend_order("extractive") == ["extractive"]
 
-    def test_build_backend_order_gemini_unchanged(self) -> None:
+    def test_build_backend_order_gemini_full_chain(self) -> None:
         from scholarposter.enrichment.summarizer import _build_backend_order
-        # gemini is first: full list, unchanged
-        assert _build_backend_order("gemini") == ["gemini", "ollama", "extractive"]
+        # gemini is first: full chain including lemonade
+        assert _build_backend_order("gemini") == ["gemini", "lemonade", "ollama", "extractive"]
+
+    def test_build_backend_order_lemonade(self) -> None:
+        from scholarposter.enrichment.summarizer import _build_backend_order
+        assert _build_backend_order("lemonade") == ["lemonade", "ollama", "extractive"]
 
 
 class TestCollectSentencesBoundary:
@@ -239,12 +247,12 @@ class TestSummarizeFallbackLogging:
         try:
             with (
                 patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
-                patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
+                patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
             ):
                 summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         finally:
             logger.remove(lid)
-        assert any("ollama" in m for m in messages), f"Expected fallback warning mentioning 'ollama', got: {messages}"
+        assert any("lemonade" in m for m in messages), f"Expected fallback warning mentioning 'lemonade', got: {messages}"
 
     def test_no_fallback_warning_when_primary_backend_succeeds(self) -> None:
         from loguru import logger
@@ -257,3 +265,69 @@ class TestSummarizeFallbackLogging:
         finally:
             logger.remove(lid)
         assert not any("falling back" in m for m in messages), f"Unexpected fallback warning: {messages}"
+
+
+class TestSummarizeLemonade:
+    @respx.mock
+    def test_returns_content_on_success(self) -> None:
+        import respx as _respx
+        _respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
+            return_value=httpx.Response(200, json={
+                "choices": [{"message": {"content": "Test summary."}}]
+            })
+        )
+        result = summarize_lemonade("text", model="test-model", host="http://127.0.0.1:8000",
+                                    prompt="Summarize:", timeout=10)
+        assert result == "Test summary."
+
+    @respx.mock
+    def test_returns_none_on_500(self) -> None:
+        import respx as _respx
+        _respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
+            return_value=httpx.Response(500, text="Internal Server Error")
+        )
+        result = summarize_lemonade("text", model="test-model", host="http://127.0.0.1:8000",
+                                    prompt="Summarize:", timeout=10)
+        assert result is None
+
+    @respx.mock
+    def test_returns_none_on_timeout(self) -> None:
+        import respx as _respx
+        _respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
+            side_effect=httpx.TimeoutException("timeout")
+        )
+        result = summarize_lemonade("text", model="test-model", host="http://127.0.0.1:8000",
+                                    prompt="Summarize:", timeout=1)
+        assert result is None
+
+    @respx.mock
+    def test_auto_detects_model_when_empty(self) -> None:
+        import respx as _respx
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = None  # reset cache
+        _respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={
+                "data": [{"id": "auto-detected-model"}]
+            })
+        )
+        _respx.post("http://127.0.0.1:8000/v1/chat/completions").mock(
+            return_value=httpx.Response(200, json={
+                "choices": [{"message": {"content": "Auto summary."}}]
+            })
+        )
+        result = summarize_lemonade("text", model="", host="http://127.0.0.1:8000",
+                                    prompt="Summarize:", timeout=10)
+        assert result == "Auto summary."
+        _mod._cached_lemonade_model = None  # cleanup
+
+    def test_detect_lemonade_model_caches(self) -> None:
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = "cached-model"
+        result = _detect_lemonade_model("http://127.0.0.1:8000")
+        assert result == "cached-model"
+        _mod._cached_lemonade_model = None  # cleanup
+
+    def test_config_accepts_lemonade_backend(self) -> None:
+        cfg = SummarizationConfig(backend="lemonade")
+        assert cfg.backend == "lemonade"
+        assert cfg.lemonade.host == "http://127.0.0.1:8000"

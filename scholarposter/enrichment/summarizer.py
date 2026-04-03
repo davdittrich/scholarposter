@@ -31,6 +31,62 @@ def _collect_sentences(sentences, min_chars: int = _MIN_SENTENCE_CHARS) -> str:
 # summarize_gemini replaced by summarize_via_gemini from gemini_client.py (ACP-based)
 
 
+_cached_lemonade_model: Optional[str] = None
+
+
+def _detect_lemonade_model(host: str, timeout: int = 5) -> str:
+    """Query Lemonade for the first available model. Cached after first success."""
+    global _cached_lemonade_model
+    if _cached_lemonade_model is not None:
+        return _cached_lemonade_model
+    try:
+        resp = httpx.get(f"{host}/v1/models", timeout=timeout)
+        models = resp.json().get("data", [])
+        if models:
+            _cached_lemonade_model = models[0]["id"]
+            return _cached_lemonade_model
+    except Exception:
+        pass
+    return ""
+
+
+def summarize_lemonade(
+    text: str,
+    model: str,
+    host: str,
+    prompt: str,
+    timeout: int,
+) -> Optional[str]:
+    """Summarize text via Lemonade's OpenAI-compatible API.
+
+    POSTs to {host}/v1/chat/completions with system/user messages.
+    Returns the assistant's response text, or None on error.
+    """
+    if not model:
+        model = _detect_lemonade_model(host)
+        if not model:
+            logger.debug("No Lemonade models available")
+            return None
+    try:
+        response = httpx.post(
+            f"{host}/v1/chat/completions",
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": text},
+                ],
+                "stream": False,
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        return content.strip() or None
+    except (httpx.TimeoutException, httpx.HTTPError, KeyError, IndexError, Exception):
+        return None
+
+
 def summarize_ollama(
     text: str,
     model: str,
@@ -112,7 +168,7 @@ def summarize(
 ) -> str:
     """Summarize text using the specified backend, with fallback chain.
 
-    Fallback order: gemini -> ollama -> extractive.
+    Fallback order: gemini -> lemonade -> ollama -> extractive.
     Result is truncated to max_chars.
     Returns empty string if all backends fail.
     """
@@ -130,6 +186,14 @@ def summarize(
                 prompt=prompt,
                 model=config.gemini.model,
                 timeout=config.gemini.timeout_seconds,
+            )
+        elif b == "lemonade":
+            result = summarize_lemonade(
+                text,
+                model=config.lemonade.model,
+                host=config.lemonade.host,
+                prompt=prompt,
+                timeout=config.lemonade.timeout_seconds,
             )
         elif b == "ollama":
             result = summarize_ollama(
@@ -158,7 +222,7 @@ def summarize(
 
 def _build_backend_order(preferred: str) -> list[str]:
     """Return backend names starting with preferred, then the fallback sequence."""
-    all_backends = ["gemini", "ollama", "extractive"]
+    all_backends = ["gemini", "lemonade", "ollama", "extractive"]
     if preferred in all_backends:
         idx = all_backends.index(preferred)
         return all_backends[idx:]  # no wrap-around — only cheaper/simpler backends
