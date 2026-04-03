@@ -99,8 +99,56 @@ timeout_seconds = 30
 ### Graceful degradation
 
 If the ACP library is not installed or the `gemini` binary is not on PATH, the
-Gemini backend silently returns `None` and the fallback chain continues to Ollama
-or extractive. No crash, no error — just a log message at DEBUG level.
+Gemini backend silently returns `None` and the fallback chain continues to Lemonade,
+then Ollama, then extractive. No crash, no error — just a log message at DEBUG level.
+
+---
+
+## Lemonade (local LLM — preferred over Ollama)
+
+[Lemonade](https://lemonade.ai) provides local LLM inference with an OpenAI-compatible
+API. It is preferred over Ollama because it uses the standard `/v1/chat/completions`
+endpoint with system/user message roles for better instruction following.
+
+### Install
+
+Install Lemonade from https://lemonade.ai or via your package manager. Start the server:
+
+```bash
+lemonade status     # check if running
+lemonade list       # see available models
+```
+
+### Pull a model
+
+```bash
+lemonade pull Phi-4-mini-instruct-GGUF
+# or for higher quality:
+lemonade pull DeepSeek-Qwen3-8B-GGUF
+```
+
+### Configure
+
+```toml
+[enrichment.summarization]
+backend = "lemonade"
+
+[enrichment.summarization.lemonade]
+model = ""                              # auto-detect from server
+host = "http://127.0.0.1:8000"
+timeout_seconds = 60                    # higher for cold starts
+```
+
+When `model` is empty, scholarposter queries `/v1/models` and uses the first available
+model. The detected model is cached for the duration of the process.
+
+### Available models
+
+```bash
+lemonade list
+# or via API:
+curl http://127.0.0.1:8000/v1/models
+```
 
 ### Cron PATH fix
 

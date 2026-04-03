@@ -8,7 +8,7 @@ summarization, and paper discovery.
 - **Cross-post** with DOI/abstract enrichment, link cards, and media
 - **Thread** long posts on Bluesky (grapheme-safe, AT Protocol compliant)
 - **Filter** by hashtag, content type, or reblog status per platform
-- **Summarize** shared papers via Gemini, Ollama, or extractive fallback
+- **Summarize** shared papers via Gemini, Lemonade, Ollama, or extractive fallback
 - **Export** a BibTeX bibliography of everything you've shared
 - **Enrich** any URL from the terminal — DOI, title, abstract, summary
 - **Discover** new papers matching your interests via OpenAlex
