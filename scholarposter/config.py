@@ -42,9 +42,18 @@ class GeminiSummarizationConfig(BaseModel):
 
 
 class LemonadeSummarizationConfig(BaseModel):
-    model: str = ""  # empty = auto-detect first available from server
+    model: str = ""  # empty = auto-detect/auto-load best downloaded model
     host: str = "http://127.0.0.1:8000"
-    timeout_seconds: int = 60  # higher default for cold starts
+    timeout_seconds: int = 60  # inference timeout
+    ctx_size: int = 8192  # context window for model loading (tokens)
+    load_timeout_seconds: int = 180  # max time for model load (includes possible download)
+    preferred_models: list[str] = [
+        "Phi-4-mini-instruct-GGUF",
+        "Qwen3-8B-GGUF",
+        "DeepSeek-Qwen3-8B-GGUF",
+        "Llama-3.2-3B-Instruct-GGUF",
+        "Gemma-3-4b-it-GGUF",
+    ]
 
 
 class OllamaSummarizationConfig(BaseModel):

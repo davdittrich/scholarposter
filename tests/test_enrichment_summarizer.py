@@ -1,6 +1,7 @@
 """Tests for enrichment/summarizer.py - text summarization backends."""
 from __future__ import annotations
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -14,7 +15,9 @@ from scholarposter.enrichment.summarizer import (
     summarize_ollama,
     summarize_extractive,
     summarize,
-    _detect_lemonade_model,
+    _ensure_lemonade_model,
+    _get_downloaded_models,
+    _load_lemonade_model,
 )
 
 MULTI_SENTENCE_TEXT = (
@@ -320,14 +323,140 @@ class TestSummarizeLemonade:
         assert result == "Auto summary."
         _mod._cached_lemonade_model = None  # cleanup
 
-    def test_detect_lemonade_model_caches(self) -> None:
+    def test_ensure_lemonade_model_returns_cached(self) -> None:
         import scholarposter.enrichment.summarizer as _mod
         _mod._cached_lemonade_model = "cached-model"
-        result = _detect_lemonade_model("http://127.0.0.1:8000")
+        result = _ensure_lemonade_model("http://127.0.0.1:8000", [], 8192)
         assert result == "cached-model"
-        _mod._cached_lemonade_model = None  # cleanup
+        _mod._cached_lemonade_model = None
 
     def test_config_accepts_lemonade_backend(self) -> None:
         cfg = SummarizationConfig(backend="lemonade")
         assert cfg.backend == "lemonade"
         assert cfg.lemonade.host == "http://127.0.0.1:8000"
+        assert cfg.lemonade.ctx_size == 8192
+        assert cfg.lemonade.load_timeout_seconds == 180
+        assert len(cfg.lemonade.preferred_models) > 0
+
+
+class TestLemonadeAutoLoad:
+    def test_get_downloaded_models_no_binary(self) -> None:
+        with patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil:
+            mock_shutil.which.return_value = None
+            result = _get_downloaded_models()
+        assert result == []
+
+    def test_get_downloaded_models_parses_cli_output(self) -> None:
+        cli_output = (
+            "Model Name                              Downloaded  Details\n"
+            "----------------------------------------------------------------------------------------------------\n"
+            "Phi-4-mini-instruct-GGUF                 Yes         llamacpp\n"
+            "Qwen3-8B-GGUF                            No          llamacpp\n"
+            "user.DeepSeek-R1-GGUF                    Yes         llamacpp\n"
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = cli_output
+        with patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil, \
+             patch("scholarposter.enrichment.summarizer.subprocess") as mock_sub:
+            mock_shutil.which.return_value = "/usr/bin/lemonade"
+            mock_sub.run.return_value = mock_result
+            mock_sub.TimeoutExpired = subprocess.TimeoutExpired
+            result = _get_downloaded_models()
+        assert "Phi-4-mini-instruct-GGUF" in result
+        assert "user.DeepSeek-R1-GGUF" in result
+        assert "Qwen3-8B-GGUF" not in result
+
+    def test_load_lemonade_model_returns_false_on_nonzero_returncode(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("scholarposter.enrichment.summarizer.subprocess") as mock_sub:
+            mock_sub.run.return_value = mock_result
+            mock_sub.TimeoutExpired = subprocess.TimeoutExpired
+            result = _load_lemonade_model("test-model", 8192, "http://127.0.0.1:8000")
+        assert result is False
+
+    @respx.mock
+    def test_ensure_lemonade_model_prefers_configured_model(self) -> None:
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = None
+        # Server has no model loaded
+        respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={"data": []})
+        )
+        mock_result_list = MagicMock()
+        mock_result_list.returncode = 0
+        mock_result_list.stdout = (
+            "Model Name                              Downloaded  Details\n"
+            "----\n"
+            "Phi-4-mini-instruct-GGUF                 Yes         llamacpp\n"
+            "Qwen3-8B-GGUF                            Yes         llamacpp\n"
+        )
+        mock_result_load = MagicMock()
+        mock_result_load.returncode = 0
+        # After load, server has the model
+        respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={
+                "data": [{"id": "Phi-4-mini-instruct-GGUF"}]
+            })
+        )
+        with patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil, \
+             patch("scholarposter.enrichment.summarizer.subprocess") as mock_sub:
+            mock_shutil.which.return_value = "/usr/bin/lemonade"
+            mock_sub.run.side_effect = [mock_result_list, mock_result_load]
+            mock_sub.TimeoutExpired = subprocess.TimeoutExpired
+            result = _ensure_lemonade_model(
+                "http://127.0.0.1:8000",
+                ["Phi-4-mini-instruct-GGUF", "Qwen3-8B-GGUF"],
+                8192,
+            )
+        assert result == "Phi-4-mini-instruct-GGUF"
+        _mod._cached_lemonade_model = None
+
+    @respx.mock
+    def test_ensure_with_user_prefix_matches_preferred(self) -> None:
+        """CLI output with 'user.' prefix should still match preferred_models."""
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = None
+        respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={"data": []})
+        )
+        mock_result_list = MagicMock()
+        mock_result_list.returncode = 0
+        mock_result_list.stdout = (
+            "Model Name                              Downloaded  Details\n"
+            "----\n"
+            "user.Phi-4-mini-instruct-GGUF            Yes         llamacpp\n"
+        )
+        mock_result_load = MagicMock()
+        mock_result_load.returncode = 0
+        respx.get("http://127.0.0.1:8000/v1/models").mock(
+            return_value=httpx.Response(200, json={
+                "data": [{"id": "user.Phi-4-mini-instruct-GGUF"}]
+            })
+        )
+        with patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil, \
+             patch("scholarposter.enrichment.summarizer.subprocess") as mock_sub:
+            mock_shutil.which.return_value = "/usr/bin/lemonade"
+            mock_sub.run.side_effect = [mock_result_list, mock_result_load]
+            mock_sub.TimeoutExpired = subprocess.TimeoutExpired
+            # preferred_models uses bare name without "user." prefix
+            result = _ensure_lemonade_model(
+                "http://127.0.0.1:8000",
+                ["Phi-4-mini-instruct-GGUF"],
+                8192,
+            )
+        # Should match despite user. prefix
+        assert "Phi-4-mini-instruct-GGUF" in result
+        _mod._cached_lemonade_model = None
+
+    def test_ensure_no_downloaded_models_returns_empty(self) -> None:
+        import scholarposter.enrichment.summarizer as _mod
+        _mod._cached_lemonade_model = None
+        with patch("scholarposter.enrichment.summarizer.httpx") as mock_httpx, \
+             patch("scholarposter.enrichment.summarizer.shutil") as mock_shutil:
+            mock_httpx.get.return_value = MagicMock(json=lambda: {"data": []})
+            mock_shutil.which.return_value = None  # no lemonade binary
+            result = _ensure_lemonade_model("http://127.0.0.1:8000", [], 8192)
+        assert result == ""
+        _mod._cached_lemonade_model = None

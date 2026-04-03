@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+import time as _time
 from math import sqrt
 from typing import Optional
 
@@ -34,20 +37,119 @@ def _collect_sentences(sentences, min_chars: int = _MIN_SENTENCE_CHARS) -> str:
 _cached_lemonade_model: Optional[str] = None
 
 
-def _detect_lemonade_model(host: str, timeout: int = 5) -> str:
-    """Query Lemonade for the first available model. Cached after first success."""
+def _get_downloaded_models() -> list[str]:
+    """Get list of downloaded model names from lemonade CLI."""
+    if not shutil.which("lemonade"):
+        return []
+    try:
+        result = subprocess.run(
+            ["lemonade", "list", "--downloaded"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return []
+        models = []
+        for line in result.stdout.strip().split("\n")[2:]:
+            line = line.strip()
+            if not line or line.startswith("-"):
+                continue
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == "Yes":
+                models.append(parts[0])
+        return models
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        return []
+
+
+def _load_lemonade_model(model: str, ctx_size: int, host: str,
+                         load_timeout: int = 180) -> bool:
+    """Load a model via lemonade CLI. Returns True when model is ready."""
+    try:
+        result = subprocess.run(
+            ["lemonade", "load", model, "--ctx-size", str(ctx_size)],
+            capture_output=True, text=True, timeout=load_timeout,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        return False
+
+    if result.returncode != 0:
+        logger.warning(f"lemonade load exited with code {result.returncode}")
+        return False
+
+    # Readiness poll — verify model is actually serving
+    deadline = _time.monotonic() + min(30, load_timeout)
+    while _time.monotonic() < deadline:
+        try:
+            resp = httpx.get(f"{host}/v1/models", timeout=5)
+            if resp.json().get("data"):
+                return True
+        except Exception:
+            pass
+        _time.sleep(2)
+    return False
+
+
+def _ensure_lemonade_model(
+    host: str,
+    preferred_models: list[str],
+    ctx_size: int,
+    load_timeout: int = 180,
+) -> str:
+    """Ensure a model is loaded on Lemonade. Returns model ID or empty string.
+
+    1. Return cached model if available
+    2. Check /v1/models for already-loaded model
+    3. Find best downloaded model matching preferred_models
+    4. Load it with configured ctx_size
+    """
     global _cached_lemonade_model
     if _cached_lemonade_model is not None:
         return _cached_lemonade_model
+
+    # Check if a model is already loaded
     try:
-        resp = httpx.get(f"{host}/v1/models", timeout=timeout)
+        resp = httpx.get(f"{host}/v1/models", timeout=5)
         models = resp.json().get("data", [])
         if models:
             _cached_lemonade_model = models[0]["id"]
             return _cached_lemonade_model
     except Exception:
         pass
-    return ""
+
+    # No model loaded — find the best downloaded model
+    downloaded = _get_downloaded_models()
+    if not downloaded:
+        logger.debug("No downloaded Lemonade models found")
+        return ""
+
+    # Match against preferred list (normalize user. prefix)
+    downloaded_normalized = {
+        d.removeprefix("user."): d for d in downloaded
+    }
+    chosen = ""
+    for preferred in preferred_models:
+        if preferred in downloaded_normalized:
+            chosen = downloaded_normalized[preferred]
+            break
+    if not chosen:
+        chosen = downloaded[0]
+
+    logger.info(f"Loading Lemonade model '{chosen}' with ctx_size={ctx_size}")
+    if _load_lemonade_model(chosen, ctx_size, host=host, load_timeout=load_timeout):
+        # Query /v1/models for the actual model ID (may differ from CLI name)
+        try:
+            resp = httpx.get(f"{host}/v1/models", timeout=10)
+            models = resp.json().get("data", [])
+            if models:
+                _cached_lemonade_model = models[0]["id"]
+                return _cached_lemonade_model
+        except Exception:
+            pass
+        _cached_lemonade_model = chosen
+        return chosen
+    else:
+        logger.warning(f"Failed to load Lemonade model '{chosen}'")
+        return ""
 
 
 def summarize_lemonade(
@@ -56,16 +158,23 @@ def summarize_lemonade(
     host: str,
     prompt: str,
     timeout: int,
+    preferred_models: list[str] | None = None,
+    ctx_size: int = 8192,
+    load_timeout: int = 180,
 ) -> Optional[str]:
     """Summarize text via Lemonade's OpenAI-compatible API.
 
     POSTs to {host}/v1/chat/completions with system/user messages.
+    Auto-loads a model if none is loaded and model is empty.
     Returns the assistant's response text, or None on error.
     """
     if not model:
-        model = _detect_lemonade_model(host)
+        model = _ensure_lemonade_model(
+            host, preferred_models or [], ctx_size,
+            load_timeout=load_timeout,
+        )
         if not model:
-            logger.debug("No Lemonade models available")
+            logger.debug("No Lemonade model available")
             return None
     try:
         response = httpx.post(
@@ -194,6 +303,9 @@ def summarize(
                 host=config.lemonade.host,
                 prompt=prompt,
                 timeout=config.lemonade.timeout_seconds,
+                preferred_models=config.lemonade.preferred_models,
+                ctx_size=config.lemonade.ctx_size,
+                load_timeout=config.lemonade.load_timeout_seconds,
             )
         elif b == "ollama":
             result = summarize_ollama(
