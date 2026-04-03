@@ -3,36 +3,30 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scholarposter"
+name = "tldr-scholar"
 version = "0.1.0"
-description = "Cross-post from Mastodon to Bluesky and LinkedIn"
+description = "Standalone academic text summarizer — CLI + Python library"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28",
     "pydantic>=2.0",
-    "atproto>=0.0.55",
-    "Mastodon.py>=2.0",
-    "beautifulsoup4",
-    "lxml",
-    "Pillow",
-    "sumy",
-    "python-dotenv",
     "typer>=0.9",
     "loguru",
+    "sumy",
     "trafilatura",
+    "beautifulsoup4",
+    "lxml",
     "PyMuPDF",
     "pymupdf4llm",
-    "grapheme>=0.6",
-    "gemini-acp @ file:./gemini-acp",
+    "gemini-acp @ file:../gemini-acp",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "respx>=0.21"]
 
 [project.scripts]
-scholarposter = "scholarposter.cli:app"
+tldr-scholar = "tldr_scholar.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short --strict-markers"
-markers = ["integration: integration tests (deselect with '-m not integration')"]
