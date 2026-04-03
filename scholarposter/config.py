@@ -37,6 +37,7 @@ class PlatformConfig(BaseModel):
 
 
 class GeminiSummarizationConfig(BaseModel):
+    model: str = ""  # empty = CLI default; e.g. "gemini-3-flash-preview"
     timeout_seconds: int = 30
 
 

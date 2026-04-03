@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from math import sqrt
 from typing import Optional
 
@@ -14,6 +13,7 @@ from sumy.summarizers.kl import KLSummarizer
 from sumy.summarizers.lsa import LsaSummarizer
 
 from scholarposter.config import SummarizationConfig
+from scholarposter.gemini_client import summarize_via_gemini
 
 _LANGUAGE = "english"
 # Minimum sentence count before extractive summarization is attempted
@@ -28,28 +28,7 @@ def _collect_sentences(sentences, min_chars: int = _MIN_SENTENCE_CHARS) -> str:
     return re.sub(r"\([^()]*\)", "", text)
 
 
-def summarize_gemini(text: str, prompt: str, timeout: int) -> Optional[str]:
-    """Summarize text using the Gemini CLI subprocess.
-
-    Calls: gemini -p <prompt>  (text passed via stdin)
-    Returns stripped stdout on success, None on timeout or nonzero exit code.
-    """
-    try:
-        result = subprocess.run(
-            ["gemini", "-p", prompt],
-            input=text,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        return None
-
-    if result.returncode != 0:
-        return None
-
-    output = result.stdout.strip()
-    return output if output else None
+# summarize_gemini replaced by summarize_via_gemini from gemini_client.py (ACP-based)
 
 
 def summarize_ollama(
@@ -146,9 +125,10 @@ def summarize(
         if i > 0:
             logger.warning(f"Summarizer: falling back to {b}")
         if b == "gemini":
-            result = summarize_gemini(
+            result = summarize_via_gemini(
                 text,
                 prompt=prompt,
+                model=config.gemini.model,
                 timeout=config.gemini.timeout_seconds,
             )
         elif b == "ollama":

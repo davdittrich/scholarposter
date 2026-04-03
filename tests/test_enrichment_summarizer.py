@@ -1,15 +1,14 @@
 """Tests for enrichment/summarizer.py - text summarization backends."""
 from __future__ import annotations
 
-import subprocess
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from scholarposter.config import SummarizationConfig
+from scholarposter.gemini_client import summarize_via_gemini
 from scholarposter.enrichment.summarizer import (
-    summarize_gemini,
     summarize_ollama,
     summarize_extractive,
     summarize,
@@ -29,40 +28,34 @@ MULTI_SENTENCE_TEXT = (
 )
 
 
-class TestSummarizeGemini:
-    def test_returns_stdout_on_success(self) -> None:
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "This is a summary.\n"
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
-            result = summarize_gemini("some text", prompt="Summarize:", timeout=10)
-        assert result == "This is a summary."
-        mock_run.assert_called_once()
-        args = mock_run.call_args[0][0]
-        assert args[0] == "gemini"
-        assert "-p" in args
-        assert "Summarize:" in args
+class TestSummarizeGeminiIntegration:
+    """Tests that summarize() correctly delegates to summarize_via_gemini."""
 
-    def test_returns_none_on_timeout(self) -> None:
-        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gemini", 10)):
-            result = summarize_gemini("some text", prompt="Summarize:", timeout=10)
-        assert result is None
+    def test_gemini_backend_calls_summarize_via_gemini(self) -> None:
+        config = SummarizationConfig(backend="gemini", max_chars=500)
+        config.gemini.model = "gemini-3-flash-preview"
+        with patch("scholarposter.enrichment.summarizer.summarize_via_gemini",
+                   return_value="gemini summary") as mock:
+            result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
+                             prompt="Sum:", config=config)
+        assert result == "gemini summary"
+        mock.assert_called_once()
+        call_kwargs = mock.call_args
+        assert call_kwargs[1]["model"] == "gemini-3-flash-preview"
 
-    def test_returns_none_on_nonzero_returncode(self) -> None:
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        with patch("subprocess.run", return_value=mock_result):
-            result = summarize_gemini("some text", prompt="Summarize:", timeout=10)
-        assert result is None
+    def test_gemini_backend_returns_none_falls_through(self) -> None:
+        config = SummarizationConfig(backend="gemini", max_chars=500)
+        with (
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
+        ):
+            result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
+                             prompt="Sum:", config=config)
+        assert result == "ollama result"
 
-    def test_returns_none_on_empty_stdout(self) -> None:
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "   "
-        with patch("subprocess.run", return_value=mock_result):
-            result = summarize_gemini("some text", prompt="Summarize:", timeout=10)
-        assert result is None
+    def test_gemini_model_empty_by_default(self) -> None:
+        config = SummarizationConfig(backend="gemini", max_chars=500)
+        assert config.gemini.model == ""
 
 
 class TestSummarizeOllama:
@@ -152,14 +145,14 @@ class TestSummarizeExtractive:
 class TestSummarize:
     def test_uses_preferred_backend_first(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
-        with patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value="gemini result"):
+        with patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value="gemini result"):
             result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         assert result == "gemini result"
 
     def test_falls_back_to_ollama_when_gemini_returns_none(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
-            patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
         ):
             result = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
@@ -168,7 +161,7 @@ class TestSummarize:
     def test_falls_back_to_extractive_when_ollama_returns_none(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
-            patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value="extractive result"),
         ):
@@ -245,7 +238,7 @@ class TestSummarizeFallbackLogging:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         try:
             with (
-                patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value=None),
+                patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
                 patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama result"),
             ):
                 summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
@@ -259,7 +252,7 @@ class TestSummarizeFallbackLogging:
         lid = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
         config = SummarizationConfig(backend="gemini", max_chars=500)
         try:
-            with patch("scholarposter.enrichment.summarizer.summarize_gemini", return_value="gemini result"):
+            with patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value="gemini result"):
                 summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         finally:
             logger.remove(lid)
