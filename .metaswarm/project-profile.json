@@ -1,0 +1,28 @@
+{
+  "name": "mastodon-crosspost",
+  "description": "Cross-posts from Mastodon (fediscience.org) to Bluesky, Twitter/X, and LinkedIn",
+  "language": "python",
+  "framework": null,
+  "test_runner": null,
+  "coverage": {
+    "enabled": false
+  },
+  "ci": null,
+  "external_tools": {
+    "gemini": true
+  },
+  "scripts": {
+    "m2blusky": "python3 m2blusky.py",
+    "m2tw": "python3 m2tw.py",
+    "m2li": "python3 m2li.py"
+  },
+  "platforms": {
+    "mastodon": {
+      "instance": "fediscience.org",
+      "user_id": "109276496085205920"
+    },
+    "bluesky": true,
+    "twitter": true,
+    "linkedin": true
+  }
+}

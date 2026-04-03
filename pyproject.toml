@@ -23,7 +23,7 @@ dependencies = [
     "PyMuPDF",
     "pymupdf4llm",
     "grapheme>=0.6",
-    "gemini-acp @ file:./gemini-acp",
+    "gemini-acp @ file:../gemini-acp",  # local path until published to PyPI or GitHub
 ]
 
 [project.optional-dependencies]
