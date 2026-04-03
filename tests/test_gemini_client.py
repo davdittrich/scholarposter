@@ -1,76 +1,21 @@
-"""Tests for scholarposter.gemini_client — ACP-based Gemini summarization."""
+"""Tests for scholarposter.gemini_client re-export.
+
+The actual ACP client tests live in gemini-acp/tests/test_gemini_acp.py.
+This file verifies the re-export works correctly.
+"""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
 
-import pytest
+class TestReExport:
+    def test_summarize_via_gemini_importable(self):
+        from scholarposter.gemini_client import summarize_via_gemini
+        assert callable(summarize_via_gemini)
 
+    def test_acp_available_importable(self):
+        from scholarposter.gemini_client import ACP_AVAILABLE
+        assert isinstance(ACP_AVAILABLE, bool)
 
-class TestSummarizeViaGemini:
-    def test_returns_none_when_acp_unavailable(self):
-        with patch("scholarposter.gemini_client.ACP_AVAILABLE", False):
-            from scholarposter.gemini_client import summarize_via_gemini
-            result = summarize_via_gemini("text", "prompt")
-        assert result is None
-
-    def test_returns_none_when_gemini_not_on_path(self):
-        with patch("scholarposter.gemini_client.ACP_AVAILABLE", True), \
-             patch("scholarposter.gemini_client.shutil") as mock_shutil:
-            mock_shutil.which.return_value = None
-            from scholarposter.gemini_client import summarize_via_gemini
-            result = summarize_via_gemini("text", "prompt")
-        assert result is None
-
-    def test_returns_none_on_timeout(self):
-        """When _run_sync returns None (from timeout inside _run_prompt), result is None."""
-        with patch("scholarposter.gemini_client.ACP_AVAILABLE", True), \
-             patch("scholarposter.gemini_client.shutil") as mock_shutil, \
-             patch("scholarposter.gemini_client._run_sync", return_value=None):
-            mock_shutil.which.return_value = "/usr/bin/gemini"
-            from scholarposter.gemini_client import summarize_via_gemini
-            result = summarize_via_gemini("text", "prompt", timeout=1)
-        assert result is None
-
-    def test_model_passed_as_kwarg(self):
-        """Verify model parameter is forwarded to _run_prompt."""
-        call_args = {}
-        async def _capture_prompt(prompt_text, model="", timeout=30.0, cwd="."):
-            call_args["model"] = model
-            return "summary"
-
-        with patch("scholarposter.gemini_client.ACP_AVAILABLE", True), \
-             patch("scholarposter.gemini_client.shutil") as mock_shutil, \
-             patch("scholarposter.gemini_client._run_prompt", side_effect=_capture_prompt):
-            mock_shutil.which.return_value = "/usr/bin/gemini"
-            from scholarposter.gemini_client import summarize_via_gemini
-            result = summarize_via_gemini("text", "prompt", model="gemini-3-flash-preview")
-        assert call_args["model"] == "gemini-3-flash-preview"
-        assert result == "summary"
-
-    def test_empty_model_not_passed_as_flag(self):
-        """When model is empty, no --model flag should be in the command."""
-        call_args = {}
-        async def _capture_prompt(prompt_text, model="", timeout=30.0, cwd="."):
-            call_args["model"] = model
-            return "summary"
-
-        with patch("scholarposter.gemini_client.ACP_AVAILABLE", True), \
-             patch("scholarposter.gemini_client.shutil") as mock_shutil, \
-             patch("scholarposter.gemini_client._run_prompt", side_effect=_capture_prompt):
-            mock_shutil.which.return_value = "/usr/bin/gemini"
-            from scholarposter.gemini_client import summarize_via_gemini
-            result = summarize_via_gemini("text", "prompt", model="")
-        assert call_args["model"] == ""
-
-
-class TestRunSync:
-    def test_works_without_event_loop(self):
-        """Normal cron context — no pre-existing event loop."""
-        from scholarposter.gemini_client import _run_sync
-        import asyncio
-
-        async def _simple():
-            return "hello"
-
-        result = _run_sync(_simple())
-        assert result == "hello"
+    def test_re_export_matches_source(self):
+        from scholarposter.gemini_client import summarize_via_gemini as sp_fn
+        from gemini_acp import summarize_via_gemini as ga_fn
+        assert sp_fn is ga_fn  # same object, not a copy
