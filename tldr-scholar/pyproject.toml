@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tldr-scholar"
+version = "0.1.0"
+description = "Standalone academic text summarizer — CLI + Python library"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28",
+    "pydantic>=2.0",
+    "typer>=0.9",
+    "loguru",
+    "sumy",
+    "trafilatura",
+    "beautifulsoup4",
+    "lxml",
+    "PyMuPDF",
+    "pymupdf4llm",
+    "gemini-acp @ file:../gemini-acp",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "respx>=0.21"]
+
+[project.scripts]
+tldr-scholar = "tldr_scholar.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short --strict-markers"
