@@ -595,3 +595,58 @@ def enrich(
             typer.echo(f"\nSummary:\n{link.summary}")
         if not has_metadata:
             typer.echo("No structured metadata found.")
+
+
+@app.command()
+def discover(
+    config: Path = typer.Option(Path("config.toml"), "--config"),
+    days: int = typer.Option(30, help="Look back N days"),
+    limit: int = typer.Option(10, help="Max suggestions"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """Discover recent papers matching your sharing interests."""
+    try:
+        cfg = load_config(config)
+        state_dir = config.parent.resolve()
+        state_mgr = StateManager(
+            state_dir=state_dir,
+            state_file=Path(cfg.state.state_file).name,
+            cache_file=Path(cfg.state.cache_file).name,
+        )
+        email = cfg.enrichment.crossref.etiquette_email
+    except Exception:
+        state_mgr = StateManager()
+        email = ""
+
+    bib = state_mgr.load_bibliography()
+    if not bib:
+        typer.echo("No bibliography found. Share papers first with `scholarposter run`.", err=True)
+        raise typer.Exit(code=1)
+
+    from scholarposter.discovery import extract_interests, discover_papers
+    interests = extract_interests(bib)
+    if not interests["top_authors"]:
+        typer.echo("Not enough data. Share more papers with DOIs.", err=True)
+        raise typer.Exit(code=1)
+
+    if len(interests["top_authors"]) < 3:
+        typer.echo("Note: few authors in bibliography — results may be limited.\n", err=True)
+
+    papers = discover_papers(interests, etiquette_email=email, max_results=limit, days=days)
+    if not papers:
+        typer.echo("No new papers found matching your interests.")
+        return
+
+    if json_output:
+        import json as json_mod
+        typer.echo(json_mod.dumps(papers, indent=2))
+    else:
+        typer.echo(f"Paper Discovery — {len(papers)} suggestions\n")
+        for i, p in enumerate(papers, 1):
+            authors = ", ".join(p["authors"][:3])
+            typer.echo(f"{i}. \"{p['title']}\"")
+            typer.echo(f"   {authors} | {p['publication_date']} | Cited: {p['cited_by_count']}")
+            typer.echo(f"   DOI: {p['doi']}")
+            if p.get("open_access_url"):
+                typer.echo(f"   OA: {p['open_access_url']}")
+            typer.echo()
