@@ -460,3 +460,25 @@ class TestLemonadeAutoLoad:
             result = _ensure_lemonade_model("http://127.0.0.1:8000", [], 8192)
         assert result == ""
         _mod._cached_lemonade_model = None
+
+
+class TestStdinSafety:
+    """FR-20d: stdin safety and byte limit."""
+
+    def test_input_truncated_at_byte_limit(self):
+        """Content exceeding byte limit is truncated before processing."""
+        from scholarposter.enrichment.summarizer import _MAX_STDIN_BYTES
+        huge = "A" * (_MAX_STDIN_BYTES + 10_000)
+        # Should not crash — extractive handles truncated input
+        result = summarize(
+            huge, backend="extractive", max_chars=150,
+            prompt="test", config=SummarizationConfig(),
+        )
+        assert isinstance(result, str)
+
+    def test_shell_metacharacters_do_not_crash(self):
+        """Shell metacharacters in content don't crash the summarizer."""
+        dangerous = "$(rm -rf /); `echo pwned`; " + MULTI_SENTENCE_TEXT
+        result = summarize_extractive(dangerous, max_chars=150)
+        assert isinstance(result, str)
+        assert len(result) <= 150

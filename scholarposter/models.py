@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+import grapheme
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -34,6 +36,12 @@ class MediaType(str, Enum):
         return cls.UNKNOWN
 
 
+class LinkType(str, Enum):
+    """Classification of linked content: file (PDF/doc) or webpage (HTML)."""
+    FILE = "file"
+    WEBPAGE = "webpage"
+
+
 class MediaAttachment(BaseModel):
     url: str
     mime_type: str
@@ -50,6 +58,29 @@ class MediaAttachment(BaseModel):
         return self
 
 
+_CARD_STRIP_RE = re.compile(
+    "["
+    "\x00-\x08\x0b\x0c\x0e-\x1f"  # C0 control chars (keep \t \n \r)
+    "\x7f-\x9f"                      # C1 control chars
+    "\u200b\ufeff"                   # zero-width space, BOM
+    "\u202a-\u202e"                  # bidi overrides LRE RLE LRO RLO PDF
+    "]"
+)
+
+
+def sanitize_card_text(text: str, max_chars: int) -> str:
+    """NFC-normalize, strip control/bidi chars, hard-truncate by graphemes."""
+    text = unicodedata.normalize("NFC", text)
+    text = _CARD_STRIP_RE.sub("", text)
+    if grapheme.length(text) > max_chars:
+        text = grapheme.slice(text, 0, max_chars)
+    return text.strip()
+
+
+_CARD_DESC_MAX_CHARS = 150   # ~visible chars in Bluesky/LinkedIn link card description
+_CARD_TITLE_MAX_CHARS = 70   # ~visible chars in Bluesky/LinkedIn link card title
+
+
 class LinkEnrichment(BaseModel):
     original_url: str
     resolved_url: Optional[str] = None
@@ -60,6 +91,37 @@ class LinkEnrichment(BaseModel):
     body_text: Optional[str] = None
     thumbnail_url: Optional[str] = None
     thumbnail_bytes: Optional[bytes] = None
+    link_type: LinkType = LinkType.WEBPAGE
+    crossref_title: Optional[str] = None
+    crossref_abstract: Optional[str] = None
+
+    @property
+    def enrichment_rank(self) -> int:
+        """Rank by enrichment level. Higher = more enriched."""
+        if self.doi:
+            return 4
+        if self.link_type == LinkType.FILE:
+            return 3
+        if self.description or self.title:
+            return 2
+        return 1
+
+    @property
+    def card_description(self) -> str:
+        """Three-tiered card description: DOI > file/webpage > empty."""
+        if self.doi:
+            return sanitize_card_text(
+                self.crossref_abstract or self.summary or self.description or "",
+                _CARD_DESC_MAX_CHARS,
+            )
+        if self.link_type == LinkType.FILE:
+            return sanitize_card_text(self.summary or self.description or "", _CARD_DESC_MAX_CHARS)
+        return sanitize_card_text(self.description or self.summary or "", _CARD_DESC_MAX_CHARS)
+
+    @property
+    def card_title(self) -> str:
+        """Crossref title > OG/extracted title > empty."""
+        return sanitize_card_text(self.crossref_title or self.title or "", _CARD_TITLE_MAX_CHARS)
 
 
 class UnifiedPost(BaseModel):

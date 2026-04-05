@@ -92,6 +92,24 @@ scholarposter bibliography [--format bibtex|json|markdown] [--output FILE]
 BibTeX output escapes all LaTeX special characters (`& % $ # _ { } ~ ^ \`).
 Publication year is extracted from Crossref metadata when available.
 
+#### Bibliography fields
+
+Each entry in `bibliography.json` contains:
+
+| Field | Description |
+|-------|-------------|
+| `doi` | Digital Object Identifier |
+| `title` | Paper title (from Crossref or OG metadata) |
+| `authors` | Author list from Crossref |
+| `abstract` | Paper abstract (may be truncated) |
+| `url` | Resolved URL of the shared link |
+| `shared_at` | ISO 8601 timestamp of first share |
+| `publication_year` | Year from Crossref metadata |
+| `platforms` | Platforms shared to (e.g. `["bluesky", "linkedin"]`) |
+| `source_toot_id` | Mastodon toot ID that contained the DOI |
+
+Entries are deduplicated by DOI. When the same paper is shared to multiple platforms, the `platforms` list is merged.
+
 ### `enrich`
 
 Enrich a URL: resolve redirects, extract metadata, look up DOI, summarize.
@@ -104,6 +122,14 @@ scholarposter enrich URL [--json] [--no-summarize]
 |------|---------|-------------|
 | `--json` | off | Machine-readable JSON output (excludes body_text/thumbnail_bytes) |
 | `--summarize/--no-summarize` | on | Include/skip summarization |
+
+The `--json` flag outputs all enrichment fields including:
+- `link_type` — `"file"` or `"webpage"` (based on Content-Type or URL extension)
+- `crossref_title`, `crossref_abstract` — Crossref-specific metadata (separate from OG)
+- `card_description`, `card_title` — resolved card text after three-tiered priority and sanitization
+- `enrichment_rank` — link quality score (4=DOI, 3=file, 2=OG-described, 1=bare)
+
+Human-readable output shows Title, DOI, Abstract (truncated to 200 chars), Resolved URL, and Summary.
 
 Works without a config file (falls back to defaults). Useful for quick paper
 triage from the terminal.

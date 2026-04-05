@@ -69,8 +69,10 @@ backend setup.
 |-----|---------|-------------|
 | `enabled` | `true` | |
 | `backend` | `"extractive"` | `"gemini"`, `"lemonade"`, `"ollama"`, or `"extractive"` |
-| `max_chars` | `500` | Truncate summary to this length |
-| `prompt` | (academic summary prompt) | System prompt sent to Gemini/Ollama |
+| `max_chars` | `150` | Truncate summary to this length |
+| `prompt` | (academic summary prompt) | System prompt for LLM backends; default targets a one-sentence summary (~150 chars) for link card display |
+
+`max_chars` controls the link card description length (visible on Bluesky and LinkedIn). The summary appears only in the link card description, not appended to the post text. A three-tiered priority determines the card content: DOI-enriched links use the Crossref abstract; file links (PDFs) use the AI summary; web pages use the OG description with AI summary as fallback. See [summarization.md](summarization.md) for details.
 
 Backends are tried in fallback order starting from the preferred one.
 Fallback is only to cheaper/simpler backends (no wrap-around).
@@ -177,3 +179,18 @@ State files are resolved relative to the directory containing `config.toml`, not
 working directory. This ensures all commands (`run`, `retry`, `status`, `bibliography`,
 `enrich`, `discover`) read and write the same files regardless of where you invoke
 scholarposter from.
+
+---
+
+## Environment variables
+
+scholarposter loads credentials from a `.env` file via python-dotenv. Store `.env` alongside `config.toml` with `chmod 600` permissions.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `BLUESKY_EMAIL` | if Bluesky enabled | Bluesky account email |
+| `BLUESKY_PASSWORD` | if Bluesky enabled | Bluesky app password (see [auth-bluesky.md](auth-bluesky.md)) |
+| `LINKEDIN_ACCESS_TOKEN` | if LinkedIn enabled | LinkedIn OAuth2 access token (see [auth-linkedin.md](auth-linkedin.md)) |
+| `LINKEDIN_OWNER_URN` | if LinkedIn enabled | LinkedIn member URN (`urn:li:person:...`) |
+| `SMTP_USER` | no | SMTP username for email notifications |
+| `SMTP_PASSWORD` | no | SMTP password for email notifications |

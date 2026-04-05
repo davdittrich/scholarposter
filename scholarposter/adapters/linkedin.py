@@ -123,9 +123,6 @@ class LinkedInAdapter(BaseAdapter):
     def _build_payload(self, post: UnifiedPost, image_urn: Optional[str]) -> dict[str, Any]:
         """Build the LinkedIn Community Management API post payload."""
         text = post.text
-        # Append first link summary if available (truncation below handles overflow)
-        if post.links and post.links[0].summary:
-            text = text + "\n\n" + post.links[0].summary
         if len(text) > _LI_MAX_CHARS:
             text = text[:_LI_MAX_CHARS - 1] + "…"
         payload: dict[str, Any] = {
@@ -149,13 +146,15 @@ class LinkedInAdapter(BaseAdapter):
                 }
             }
         elif post.links:
-            link = post.links[0]
+            link = max(post.links, key=lambda l: l.enrichment_rank)
             url = link.resolved_url or link.original_url
             article: dict[str, Any] = {"source": url}
-            if link.title:
-                article["title"] = link.title
-            if link.description:
-                article["description"] = link.description
+            card_title = link.card_title
+            card_desc = link.card_description
+            if card_title:
+                article["title"] = card_title
+            if card_desc:
+                article["description"] = card_desc
             if link.thumbnail_url:
                 article["thumbnailUrl"] = link.thumbnail_url
             payload["content"] = {"article": article}

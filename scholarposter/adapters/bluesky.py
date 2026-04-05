@@ -29,6 +29,27 @@ _TAG_RE = re.compile(rb"#(\S+)")
 MAX_GRAPHEMES = 300
 
 
+def _select_best_link(links, chunk_text=None, promoted=None):
+    """Select the most-enriched link for a chunk. FR-26a."""
+    if not links:
+        return promoted
+    candidates = []
+    if chunk_text is not None:
+        for link in links:
+            url = link.resolved_url or link.original_url
+            if url in chunk_text or link.original_url in chunk_text:
+                pos = chunk_text.find(link.original_url)
+                if pos == -1:
+                    pos = chunk_text.find(url)
+                candidates.append((link, pos))
+    if candidates:
+        candidates.sort(key=lambda x: (-x[0].enrichment_rank, x[1]))
+        return candidates[0][0]
+    if promoted:
+        return promoted
+    return max(links, key=lambda l: l.enrichment_rank)
+
+
 def parse_mentions(text: str) -> list[dict[str, Any]]:
     """Parse @mentions from text, returning byte-accurate spans."""
     spans = []
@@ -175,26 +196,31 @@ class BlueskyAdapter(BaseAdapter):
     def post(self, unified_post: UnifiedPost, dry_run: bool = False) -> PostResult:
         """Post a UnifiedPost to Bluesky, threading if needed."""
         text = apply_hashtag_rules(unified_post.text, unified_post.hashtags, self._hashtag_rules)
-
-        # Append first link summary if it fits within the grapheme limit
-        if unified_post.links and unified_post.links[0].summary:
-            combined = text + "\n\n" + unified_post.links[0].summary
-            if _grapheme_len(combined) <= MAX_GRAPHEMES:
-                text = combined
-
         chunks = chunk_text(text)
 
         if dry_run:
             return PostResult(platform=self.platform_name, status=PostStatus.POSTED)
 
-        # Upload images (only for first chunk)
-        embed = self._build_embed(unified_post)
+        # Determine post-level best link for promotion rule
+        post_best_link = None
+        if unified_post.links:
+            post_best_link = max(unified_post.links, key=lambda l: l.enrichment_rank)
 
         root_ref: Optional[Any] = None
         parent_ref: Optional[Any] = None
+        promoted_link = None
 
         for i, chunk in enumerate(chunks):
             facets = _build_facets(chunk, self._client)
+
+            if i == 0 and unified_post.media:
+                embed = self._build_image_embed(unified_post)
+                promoted_link = post_best_link  # Promote to chunk 2
+            else:
+                selected = _select_best_link(unified_post.links, chunk, promoted_link)
+                embed = self._build_link_embed(selected)
+                promoted_link = None  # Only promote once
+
             reply = None
             if i > 0 and root_ref and parent_ref:
                 reply = models.AppBskyFeedPost.ReplyRef(
@@ -202,13 +228,11 @@ class BlueskyAdapter(BaseAdapter):
                     parent=parent_ref,
                 )
 
-            chunk_embed = embed if i == 0 else None
-
             try:
                 record = models.AppBskyFeedPost.Record(
                     created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                     text=chunk,
-                    embed=chunk_embed,
+                    embed=embed,
                     facets=facets or None,
                     reply=reply,
                 )
@@ -253,52 +277,50 @@ class BlueskyAdapter(BaseAdapter):
             post_url=post_url,
         )
 
-    def _build_embed(self, post: UnifiedPost) -> Optional[Any]:
-        """Build an image embed or link card embed for the post."""
-        if not self._media_cfg.enabled:
+    def _build_image_embed(self, post):
+        """Build image embed from post media."""
+        if not self._media_cfg.enabled or not post.media:
             return None
-        if post.media:
-            images = []
-            for att in post.media:
-                try:
-                    img_bytes = download_media(att.url)
-                    if not img_bytes:
-                        continue
-                    img_bytes = resize_image(img_bytes, max_size_kb=self._media_cfg.max_image_size_kb, max_dims=(2048, 2048))
-                    upload = self._client.com.atproto.repo.upload_blob(img_bytes)
-                    images.append(
-                        models.AppBskyEmbedImages.Image(
-                            alt=att.alt_text or "",
-                            image=upload.blob,
-                        )
+        images = []
+        for att in post.media:
+            try:
+                img_bytes = download_media(att.url)
+                if not img_bytes:
+                    continue
+                img_bytes = resize_image(img_bytes, max_size_kb=self._media_cfg.max_image_size_kb, max_dims=(2048, 2048))
+                upload = self._client.com.atproto.repo.upload_blob(img_bytes)
+                images.append(
+                    models.AppBskyEmbedImages.Image(
+                        alt=att.alt_text or "",
+                        image=upload.blob,
                     )
-                except Exception as e:
-                    logger.warning(f"Bluesky image embed failed for {att.url}: {e}")
-            if images:
-                return models.AppBskyEmbedImages.Main(images=images)
-
-        # Link card from first enriched link
-        if post.links:
-            link = post.links[0]
-            url = link.resolved_url or link.original_url
-            card = models.AppBskyEmbedExternal.External(
-                uri=url,
-                title=link.title or "",
-                description=link.description or "",
-            )
-            if link.thumbnail_bytes:
-                try:
-                    # FR-10: resize thumbnail to 400×400 JPEG before upload
-                    thumb_bytes = resize_image(link.thumbnail_bytes, max_size_kb=976, max_dims=(400, 400))
-                    thumb_upload = self._client.com.atproto.repo.upload_blob(thumb_bytes)
-                    card = models.AppBskyEmbedExternal.External(
-                        uri=url,
-                        title=link.title or "",
-                        description=link.description or "",
-                        thumb=thumb_upload.blob,
-                    )
-                except Exception:
-                    pass
-            return models.AppBskyEmbedExternal.Main(external=card)
-
+                )
+            except Exception as e:
+                logger.warning(f"Bluesky image embed failed for {att.url}: {e}")
+        if images:
+            return models.AppBskyEmbedImages.Main(images=images)
         return None
+
+    def _build_link_embed(self, link):
+        """Build link card embed from a single LinkEnrichment."""
+        if not link or not self._media_cfg.enabled:
+            return None
+        url = link.resolved_url or link.original_url
+        card = models.AppBskyEmbedExternal.External(
+            uri=url,
+            title=link.card_title,
+            description=link.card_description,
+        )
+        if link.thumbnail_bytes:
+            try:
+                thumb_bytes = resize_image(link.thumbnail_bytes, max_size_kb=976, max_dims=(400, 400))
+                thumb_upload = self._client.com.atproto.repo.upload_blob(thumb_bytes)
+                card = models.AppBskyEmbedExternal.External(
+                    uri=url,
+                    title=link.card_title,
+                    description=link.card_description,
+                    thumb=thumb_upload.blob,
+                )
+            except Exception:
+                pass
+        return models.AppBskyEmbedExternal.Main(external=card)

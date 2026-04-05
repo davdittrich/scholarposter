@@ -8,7 +8,7 @@ summarization, and paper discovery.
 - **Cross-post** with DOI/abstract enrichment, link cards, and media
 - **Thread** long posts on Bluesky (grapheme-safe, AT Protocol compliant)
 - **Filter** by hashtag, content type, or reblog status per platform
-- **Summarize** shared papers via Gemini, Lemonade, Ollama, or extractive fallback
+- **Summarize** shared papers into link card descriptions via Gemini, Lemonade, Ollama, or extractive fallback
 - **Export** a BibTeX bibliography of everything you've shared
 - **Enrich** any URL from the terminal — DOI, title, abstract, summary
 - **Discover** new papers matching your interests via OpenAlex
@@ -24,9 +24,9 @@ flowchart TD
     C -->|yes| E[Enrichment pipeline]
 
     E --> E1[Unshorten URLs]
-    E1 --> E2{Content type?}
-    E2 -->|HTML| E3[OG tags + trafilatura body text]
-    E2 -->|PDF| E4[PyMuPDF metadata + text]
+    E1 --> E1a[Classify link type]
+    E1a -->|webpage| E3[OG tags + trafilatura body text]
+    E1a -->|file| E4[PyMuPDF metadata + text]
     E3 & E4 --> E5[DOI detection from URL]
     E5 --> E6[Crossref lookup + cache]
     E6 --> E7{Summarize?}
@@ -39,9 +39,10 @@ flowchart TD
     S3 -->|fail| S4[Extractive]
     S1 & S2 & S3 & S4 --> F
 
-    F[Enriched post] --> G{Platform}
-    G -->|Bluesky| H[Thread + facets + embed]
-    G -->|LinkedIn| I[Article card + image]
+    F[Enriched post] --> F1[Resolve card title + description]
+    F1 --> G{Platform}
+    G -->|Bluesky| H[Thread + facets + link card per chunk]
+    G -->|LinkedIn| I[Article card with best link]
     H & I --> J[Update state + bibliography]
 ```
 
@@ -52,7 +53,7 @@ flowchart TD
 Requires Python 3.11+ and git.
 
 ```bash
-git clone <repo-url> scholarposter-src
+git clone https://github.com/davdittrich/scholarposter.git scholarposter-src
 cd scholarposter-src
 ./install.sh ~/scholarposter
 ```
@@ -71,7 +72,8 @@ Verify:
 
 - [ ] **Mastodon credentials** — see [docs/auth-mastodon.md](docs/auth-mastodon.md)
 - [ ] **Edit `config.toml`** — set instance URL and credentials file path
-- [ ] **Fill in `.env`** — Bluesky app password and LinkedIn token (see [docs/auth-linkedin.md](docs/auth-linkedin.md))
+- [ ] **Bluesky credentials** — see [docs/auth-bluesky.md](docs/auth-bluesky.md)
+- [ ] **LinkedIn credentials** — see [docs/auth-linkedin.md](docs/auth-linkedin.md)
 - [ ] **Summarization** (optional) — see [docs/summarization.md](docs/summarization.md)
 
 ---
@@ -187,16 +189,15 @@ same files regardless of working directory.
 
 ## Summarization
 
-scholarposter supports four summarization backends in a fallback chain:
+scholarposter generates a one-sentence summary (~150 characters) and places it in the
+link card description on Bluesky and LinkedIn — not in the post text. Four backends
+fall back in order: `gemini → lemonade → ollama → extractive`.
 
-```
-gemini → lemonade → ollama → extractive
-```
-
-The extractive backend (sumy KL+LSA) is always available with no setup.
-For LLM-quality summaries, configure Lemonade (local, preferred) or Gemini (cloud).
-See [docs/summarization.md](docs/summarization.md) for setup instructions and model
-recommendations.
+A three-tiered priority determines each card's description: DOI-enriched links use
+the Crossref abstract; file links (PDFs) use the AI summary; web pages use the OG
+description with the AI summary as fallback. See
+[docs/summarization.md](docs/summarization.md) for backend setup, card placement
+details, and the link selection algorithm.
 
 ---
 
@@ -244,7 +245,7 @@ See [docs/configuration.md](docs/configuration.md) for Signal and email backends
 scholarposter/
 ├── cli.py                  # Typer CLI — 7 commands
 ├── config.py               # Pydantic config models + TOML loading
-├── models.py               # UnifiedPost, PostResult, BibliographyEntry
+├── models.py               # UnifiedPost, LinkType, card_description/card_title, PostResult
 ├── state.py                # JSON state/cache, file locking, bibliography
 ├── collector.py            # Mastodon toot fetching and HTML→text parsing
 ├── filters.py              # Hashtag/content-type filtering, hashtag rules
@@ -254,7 +255,7 @@ scholarposter/
 ├── migration.py            # Legacy lasttoot*.txt → state.json migration
 ├── enrichment/
 │   ├── pipeline.py         # 5-stage enrichment orchestrator
-│   ├── url.py              # URL unshortening, content-type detection
+│   ├── url.py              # URL unshortening, content-type detection, link type classification
 │   ├── html.py             # OG tag extraction, trafilatura body text
 │   ├── pdf.py              # PyMuPDF metadata + pymupdf4llm text
 │   ├── doi.py              # DOI regex detection + Crossref API lookup
@@ -306,7 +307,7 @@ overwrite an existing `state.json`.
 ## Development
 
 ```bash
-git clone <repo-url> scholarposter
+git clone https://github.com/davdittrich/scholarposter.git
 cd scholarposter
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

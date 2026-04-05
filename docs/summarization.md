@@ -1,7 +1,8 @@
 # Summarization setup
 
 When scholarposter finds a link in a toot, it fetches the page, extracts the main
-text, and generates a 2–3 sentence summary to attach to the cross-post. Four
+text, and generates a single-sentence summary (~150 characters) placed in the link
+card description field on Bluesky and LinkedIn, not appended to the post text. Four
 backends are available, tried in fallback order until one succeeds:
 
 ```
@@ -17,10 +18,46 @@ backend = "lemonade"   # "gemini", "lemonade", "ollama", or "extractive"
 
 If the preferred backend fails (process not found, timeout, API error), the next
 one in the chain is tried automatically. Fallback only moves toward simpler
-backends — no wrap-around. If all fail, no summary is attached; the post still
+backends — no wrap-around. If all fail, the card omits the summary; the post still
 goes through.
 
----
+## How summaries appear
+
+### Card placement
+
+The summary populates the link card description visible below the title. The original Mastodon post provides context in the main text body. When a post has media (images), the embed slot prioritizes images, and the link card drops the summary.
+
+### Three-tiered description priority
+
+The `card_description` property on each enriched link resolves via a three-tiered priority:
+
+1. **DOI-enriched links** (any type): Crossref abstract → AI summary → OG description → empty
+2. **File links** (PDFs, documents): AI summary → OG description → empty
+3. **Web pages** (HTML): OG description → AI summary → empty
+
+The `card_title` resolves similarly: Crossref title → OG/extracted title → empty.
+
+The pipeline sanitizes all card text before display. It applies NFC Unicode normalization, strips control characters and bidi overrides, and hard-truncates at 150 graphemes (description) or 70 graphemes (title).
+
+### Link selection
+
+scholarposter selects the most enriched link for the card when a toot contains multiple URLs:
+
+- DOI-resolved = rank 4 (highest)
+- File type (PDF/doc) = rank 3
+- HTML with OG metadata = rank 2
+- Bare link = rank 1
+
+First appearance in the text breaks any ties. LinkedIn selects the single highest-ranked link for the post. Bluesky uses per-chunk selection (see next section).
+
+### Bluesky threading
+
+scholarposter splits a toot into a thread when it exceeds 300 graphemes:
+
+- Each chunk embeds the most-enriched link from its text
+- The first chunk prefers images when media is present (no link card in chunk 1)
+
+**Promotion rule**: If images consume chunk 1's embed slot, scholarposter promotes the post's most-enriched link to chunk 2 even if that URL does not appear in chunk 2's text.
 
 ## Extractive (no setup required)
 
@@ -275,8 +312,8 @@ It is sent as the system prompt; the article text follows as the user input.
 
 ```toml
 [enrichment.summarization]
-prompt = "In 2 sentences, describe the main finding of this research for a non-specialist audience."
-max_chars = 400
+prompt = "In one sentence, describe the main finding of this research for a non-specialist audience."
+max_chars = 150
 ```
 
 The extractive backend ignores the prompt — it uses statistical sentence selection

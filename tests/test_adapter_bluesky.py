@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch, call
 from scholarposter.adapters.base import BaseAdapter
 from scholarposter.adapters.bluesky import BlueskyAdapter, parse_mentions, parse_urls, parse_tags, chunk_text
 from scholarposter.models import UnifiedPost, MediaAttachment, LinkEnrichment, PostStatus
-
+from scholarposter.config import MediaConfig
 
 def make_post(text="Hello world", urls=None, media=None, links=None) -> UnifiedPost:
     return UnifiedPost(
@@ -433,7 +433,7 @@ class TestBuildEmbedLogsImageFailure:
         return client
 
     def test_image_download_failure_logs_warning(self, mock_client):
-        """_build_embed must log a warning when image download raises."""
+        """_build_image_embed must log a warning when image download raises."""
         from scholarposter.adapters.bluesky import BlueskyAdapter
 
         adapter = BlueskyAdapter(client=mock_client)
@@ -448,7 +448,7 @@ class TestBuildEmbedLogsImageFailure:
         sink_id = logger.add(lambda m: messages.append(m.record["message"]))
         try:
             with patch("scholarposter.adapters.bluesky.download_media", side_effect=Exception("timeout")):
-                adapter._build_embed(post)
+                adapter._build_image_embed(post)
         finally:
             logger.remove(sink_id)
 
@@ -532,3 +532,50 @@ class TestBlueskyAdapterHashtagRules:
         call_args = mock_client.com.atproto.repo.create_record.call_args
         record = call_args[1]["record"] if call_args[1] else call_args[0][0].record
         assert record.text == "Plain post"
+
+
+class TestCardDescriptionInEmbed:
+    """FR-20c, FR-26a: summary in card, not in text."""
+
+    def test_summary_not_in_post_text(self):
+        """FR-20c: summary never appended to post text."""
+        mock_client = MagicMock()
+        mock_client.me = MagicMock(did="did:plc:test")
+        mock_client.get_current_time_iso.return_value = "2024-01-01T00:00:00Z"
+        mock_client.com.atproto.repo.create_record.return_value = MagicMock(uri="at://test/post/1", cid="cid1")
+        adapter = BlueskyAdapter(client=mock_client, media_config=MediaConfig(enabled=True))
+        post = UnifiedPost(
+            source_id="1", text="Check this out", source_url="https://x.com/1",
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            links=[LinkEnrichment(original_url="https://example.com", summary="AI summary here")],
+        )
+        adapter.post(post)
+        call_args = mock_client.com.atproto.repo.create_record.call_args
+        record = call_args.args[0].record
+        assert "AI summary here" not in record.text
+
+    def test_card_uses_card_description_and_title(self):
+        """FR-26a: card uses link.card_description and link.card_title."""
+        mock_client = MagicMock()
+        mock_client.me = MagicMock(did="did:plc:test")
+        mock_client.get_current_time_iso.return_value = "2024-01-01T00:00:00Z"
+        mock_client.com.atproto.repo.create_record.return_value = MagicMock(uri="at://test/post/1", cid="cid1")
+        adapter = BlueskyAdapter(client=mock_client, media_config=MediaConfig(enabled=True))
+        post = UnifiedPost(
+            source_id="1", text="Check this out", source_url="https://x.com/1",
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            links=[LinkEnrichment(
+                original_url="https://example.com",
+                doi="10.1000/test",
+                crossref_title="Crossref Title",
+                crossref_abstract="Crossref Abstract",
+                title="OG Title",
+                description="OG Desc",
+            )],
+        )
+        adapter.post(post)
+        call_args = mock_client.com.atproto.repo.create_record.call_args
+        record = call_args.args[0].record
+        # Card should use card_title (Crossref) and card_description (Crossref abstract)
+        assert record.embed.external.title == "Crossref Title"
+        assert record.embed.external.description == "Crossref Abstract"

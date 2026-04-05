@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from scholarposter.enrichment.pipeline import EnrichmentPipeline
 from scholarposter.config import EnrichmentConfig, CrossrefConfig, SummarizationConfig, UrlUnshortenConfig
-from scholarposter.models import UnifiedPost, LinkEnrichment
+from scholarposter.models import UnifiedPost, LinkEnrichment, LinkType
 from scholarposter.state import StateManager
 
 
@@ -298,3 +298,114 @@ class TestHtmlSizeGuard:
             # Must not raise, must return a link
             result = pipeline.enrich(post)
             assert len(result.links) == 1
+
+
+class TestLinkTypeClassification:
+    """FR-15a: pipeline sets link_type based on content type."""
+
+    def test_pdf_url_classified_as_file(self, config, state):
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/paper.pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="application/pdf"),
+            patch("scholarposter.enrichment.pipeline.download_media", return_value=b"%PDF-fake"),
+            patch("scholarposter.enrichment.pipeline.extract_pdf_metadata", return_value={"title": "T"}),
+            patch("scholarposter.enrichment.pipeline.extract_pdf_text", return_value="text"),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://example.com/paper.pdf"])
+            result = pipeline.enrich(post)
+            assert result.links[0].link_type == LinkType.FILE
+
+    def test_html_url_classified_as_webpage(self, config, state):
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/page"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={"title": None, "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://example.com/page"])
+            result = pipeline.enrich(post)
+            assert result.links[0].link_type == LinkType.WEBPAGE
+
+    def test_unknown_content_type_defaults_to_webpage(self, config, state):
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/thing"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="application/octet-stream"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={"title": None, "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://example.com/thing"])
+            result = pipeline.enrich(post)
+            assert result.links[0].link_type == LinkType.WEBPAGE
+
+    def test_classification_uses_resolved_url(self, config, state):
+        """FR-15a: classification must use resolved URL, not original."""
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/paper.pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value=None),
+            patch("scholarposter.enrichment.pipeline.download_media", return_value=b"%PDF-fake"),
+            patch("scholarposter.enrichment.pipeline.extract_pdf_metadata", return_value={}),
+            patch("scholarposter.enrichment.pipeline.extract_pdf_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://t.co/shortlink"])
+            result = pipeline.enrich(post)
+            assert result.links[0].link_type == LinkType.FILE
+
+
+class TestCrossrefFieldSeparation:
+    """FR-20b: Crossref data stored in dedicated fields."""
+
+    def test_crossref_title_stored_separately(self, config, state):
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://doi.org/10.1000/test"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html><head><title>OG Title</title></head></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
+                "title": "OG Title", "description": "OG Desc", "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=["10.1000/test"]),
+            patch("scholarposter.enrichment.pipeline.lookup_doi", return_value={
+                "title": "Crossref Title", "abstract": "Crossref Abstract"}),
+        ):
+            post = make_post(urls=["https://doi.org/10.1000/test"])
+            result = pipeline.enrich(post)
+            link = result.links[0]
+            assert link.crossref_title == "Crossref Title"
+            assert link.crossref_abstract == "Crossref Abstract"
+            assert link.title == "OG Title"
+            assert link.description == "OG Desc"
+
+    def test_crossref_fills_title_when_og_missing(self, config, state):
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://doi.org/10.1000/test"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
+                "title": None, "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=["10.1000/test"]),
+            patch("scholarposter.enrichment.pipeline.lookup_doi", return_value={
+                "title": "Crossref Title", "abstract": "Crossref Abstract"}),
+        ):
+            post = make_post(urls=["https://doi.org/10.1000/test"])
+            result = pipeline.enrich(post)
+            link = result.links[0]
+            assert link.crossref_title == "Crossref Title"
+            assert link.title == "Crossref Title"
+            assert link.crossref_abstract == "Crossref Abstract"
+            assert link.description == "Crossref Abstract"

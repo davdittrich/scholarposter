@@ -9,6 +9,8 @@ from scholarposter.models import (
     PostStatus,
     PostResult,
     PlatformState,
+    LinkType,
+    sanitize_card_text,
 )
 
 
@@ -100,6 +102,129 @@ class TestLinkEnrichment:
         )
         assert link.doi == "10.1000/xyz123"
         assert link.thumbnail_bytes == b"\xff\xd8\xff\xe0"
+
+
+class TestLinkType:
+    def test_enum_values(self):
+        assert LinkType.FILE == "file"
+        assert LinkType.WEBPAGE == "webpage"
+
+    def test_default_is_webpage(self):
+        link = LinkEnrichment(original_url="https://example.com")
+        assert link.link_type == LinkType.WEBPAGE
+
+
+class TestSanitizeCardText:
+    def test_strips_bidi_overrides(self):
+        assert sanitize_card_text("hello\u202eworld", 100) == "helloworld"
+
+    def test_strips_null_bytes(self):
+        assert sanitize_card_text("hello\x00world", 100) == "helloworld"
+
+    def test_strips_zero_width(self):
+        assert sanitize_card_text("hello\u200bworld", 100) == "helloworld"
+
+    def test_nfc_normalization(self):
+        # NFD café → NFC café
+        assert sanitize_card_text("cafe\u0301", 100) == "café"
+
+    def test_truncates_at_max_chars(self):
+        assert len(sanitize_card_text("a" * 200, 150)) == 150
+
+    def test_grapheme_aware_truncation(self):
+        import grapheme
+        # ZWJ emoji counts as 1 grapheme
+        emoji = "👨‍👩‍👧‍👦"
+        result = sanitize_card_text(emoji * 5, 3)
+        assert grapheme.length(result) == 3
+
+
+class TestCardDescription:
+    def test_doi_with_abstract(self):
+        link = LinkEnrichment(
+            original_url="https://doi.org/10.1000/x",
+            doi="10.1000/x",
+            crossref_abstract="Key finding about X.",
+            summary="AI summary.",
+            description="OG desc.",
+        )
+        assert link.card_description == "Key finding about X."
+
+    def test_doi_without_abstract_falls_to_summary(self):
+        link = LinkEnrichment(
+            original_url="https://doi.org/10.1000/x",
+            doi="10.1000/x",
+            summary="AI summary.",
+            description="OG desc.",
+        )
+        assert link.card_description == "AI summary."
+
+    def test_file_prefers_summary(self):
+        link = LinkEnrichment(
+            original_url="https://example.com/paper.pdf",
+            link_type=LinkType.FILE,
+            summary="AI summary.",
+            description="PDF subject.",
+        )
+        assert link.card_description == "AI summary."
+
+    def test_webpage_prefers_og(self):
+        link = LinkEnrichment(
+            original_url="https://example.com/page",
+            link_type=LinkType.WEBPAGE,
+            summary="AI summary.",
+            description="OG description.",
+        )
+        assert link.card_description == "OG description."
+
+    def test_webpage_without_og_falls_to_summary(self):
+        link = LinkEnrichment(
+            original_url="https://example.com/page",
+            link_type=LinkType.WEBPAGE,
+            summary="AI summary.",
+        )
+        assert link.card_description == "AI summary."
+
+    def test_both_missing_returns_empty(self):
+        link = LinkEnrichment(original_url="https://example.com")
+        assert link.card_description == ""
+
+
+class TestCardTitle:
+    def test_crossref_title_wins(self):
+        link = LinkEnrichment(
+            original_url="https://example.com",
+            crossref_title="Crossref Title",
+            title="OG Title",
+        )
+        assert link.card_title == "Crossref Title"
+
+    def test_og_title_fallback(self):
+        link = LinkEnrichment(
+            original_url="https://example.com",
+            title="OG Title",
+        )
+        assert link.card_title == "OG Title"
+
+    def test_missing_returns_empty(self):
+        link = LinkEnrichment(original_url="https://example.com")
+        assert link.card_title == ""
+
+
+class TestEnrichmentRank:
+    def test_doi_highest(self):
+        link = LinkEnrichment(original_url="https://doi.org/10.1000/x", doi="10.1000/x")
+        assert link.enrichment_rank == 4
+
+    def test_file_over_webpage_with_og(self):
+        link_file = LinkEnrichment(original_url="https://example.com/doc.pdf", link_type=LinkType.FILE)
+        link_webpage = LinkEnrichment(original_url="https://example.com/page", link_type=LinkType.WEBPAGE, title="OG Title")
+        assert link_file.enrichment_rank == 3
+        assert link_webpage.enrichment_rank == 2
+
+    def test_bare_link_lowest(self):
+        link = LinkEnrichment(original_url="https://example.com")
+        assert link.enrichment_rank == 1
 
 
 class TestUnifiedPost:

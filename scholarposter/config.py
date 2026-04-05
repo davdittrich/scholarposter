@@ -76,10 +76,11 @@ class ExtractiveSummarizationConfig(BaseModel):
 class SummarizationConfig(BaseModel):
     enabled: bool = True
     backend: Literal["gemini", "lemonade", "ollama", "extractive"] = "extractive"
-    max_chars: int = 500
+    max_chars: int = 150
     prompt: str = (
-        "Summarize this academic paper/article in 2-3 sentences for a social media post. "
-        "Focus on the key finding and methodology. Be concise and precise."
+        "Summarize the key finding of this academic paper/article "
+        "in one sentence (~150 characters) for a social media link card. "
+        "Be precise and specific."
     )
     gemini: GeminiSummarizationConfig = GeminiSummarizationConfig()
     lemonade: LemonadeSummarizationConfig = LemonadeSummarizationConfig()

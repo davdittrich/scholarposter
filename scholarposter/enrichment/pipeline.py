@@ -13,8 +13,8 @@ from scholarposter.enrichment.html import extract_og_tags, extract_body_text
 from scholarposter.enrichment.media import download_media
 from scholarposter.enrichment.pdf import extract_pdf_metadata, extract_pdf_text
 from scholarposter.enrichment.summarizer import summarize
-from scholarposter.enrichment.url import unshorten_url, detect_content_type
-from scholarposter.models import LinkEnrichment, UnifiedPost
+from scholarposter.enrichment.url import unshorten_url, detect_content_type, classify_link_type
+from scholarposter.models import LinkEnrichment, LinkType, UnifiedPost
 from scholarposter.state import StateManager
 
 _MAX_HTML_BYTES = 5_000_000
@@ -61,7 +61,13 @@ class EnrichmentPipeline:
             logger.warning(f"Content type detection failed for {resolved}: {e}")
             content_type = ""
 
-        is_pdf = content_type == "application/pdf"
+        # FR-15a: classify link type using resolved URL
+        link_type_str = classify_link_type(content_type, resolved)
+        link = link.model_copy(update={"link_type": LinkType(link_type_str)})
+        is_pdf = link.link_type == LinkType.FILE and (
+            content_type == "application/pdf"
+            or resolved.lower().endswith(".pdf")
+        )
 
         # Stage 3: Extract content based on type
         if is_pdf:
@@ -220,9 +226,13 @@ class EnrichmentPipeline:
             return link
 
         updates: dict = {"doi": doi}
-        if data.get("title") and not link.title:
-            updates["title"] = data["title"]
-        if data.get("abstract") and not link.description:
-            updates["description"] = data["abstract"]
+        if data.get("title"):
+            updates["crossref_title"] = data["title"]
+            if not link.title:
+                updates["title"] = data["title"]
+        if data.get("abstract"):
+            updates["crossref_abstract"] = data["abstract"]
+            if not link.description:
+                updates["description"] = data["abstract"]
 
         return link.model_copy(update=updates)

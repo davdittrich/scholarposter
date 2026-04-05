@@ -47,3 +47,37 @@ def detect_content_type(url: str, timeout: int = 5) -> Optional[str]:
     path = urlparse(url).path
     mime, _ = mimetypes.guess_type(path)
     return mime
+
+
+# MIME types that classify a link as LinkType.FILE (FR-15a)
+_FILE_MIME_ALLOWLIST = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+# URL extensions that classify a link as LinkType.FILE
+_FILE_EXTENSIONS = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"}
+
+
+def classify_link_type(content_type: Optional[str], resolved_url: str) -> str:
+    """Classify a URL as 'file' or 'webpage' per FR-15a.
+
+    Primary: Content-Type against allowlist.
+    Fallback: URL extension on resolved URL.
+    Default: 'webpage'.
+    """
+    if content_type:
+        ct = content_type.split(";")[0].strip().lower()
+        if ct in _FILE_MIME_ALLOWLIST or ct.startswith(
+            "application/vnd.openxmlformats-officedocument."
+        ):
+            return "file"
+    # Fallback: URL extension
+    path = urlparse(resolved_url).path.lower()
+    for ext in _FILE_EXTENSIONS:
+        if path.endswith(ext):
+            return "file"
+    return "webpage"

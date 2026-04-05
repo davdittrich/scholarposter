@@ -23,6 +23,8 @@ _LANGUAGE = "english"
 _MIN_SENTENCES = 3
 _MIN_SENTENCE_CHARS = 40  # Minimum chars to include a sentence in summary
 
+_MAX_STDIN_BYTES = 50_000  # 50 KB — safe for LLM context windows
+
 
 def _collect_sentences(sentences, min_chars: int = _MIN_SENTENCE_CHARS) -> str:
     """Join sentences exceeding min_chars, stripping parenthesized text."""
@@ -278,6 +280,11 @@ def summarize(
     Result is truncated to max_chars.
     Returns empty string if all backends fail.
     """
+    # FR-20d: truncate input to safe byte limit
+    text_bytes = text.encode("utf-8")
+    if len(text_bytes) > _MAX_STDIN_BYTES:
+        text = text_bytes[:_MAX_STDIN_BYTES].decode("utf-8", errors="ignore")
+
     result: Optional[str] = None
 
     # Try backends in order starting from the preferred one

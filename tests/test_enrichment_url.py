@@ -2,7 +2,7 @@
 import pytest
 import respx
 import httpx
-from scholarposter.enrichment.url import unshorten_url, detect_content_type
+from scholarposter.enrichment.url import unshorten_url, detect_content_type, classify_link_type
 
 
 class TestUnshortenUrl:
@@ -115,3 +115,42 @@ class TestDetectContentType:
         )
         result = detect_content_type("https://example.com/unknown.xyz123")
         assert result is None
+
+
+class TestClassifyLinkType:
+    """FR-15a: link type classification."""
+
+    def test_pdf_mime(self):
+        assert classify_link_type("application/pdf", "https://x.com/a") == "file"
+
+    def test_docx_mime(self):
+        ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert classify_link_type(ct, "https://x.com/a") == "file"
+
+    def test_pptx_mime(self):
+        ct = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        assert classify_link_type(ct, "https://x.com/a") == "file"
+
+    def test_html_mime(self):
+        assert classify_link_type("text/html", "https://x.com/a") == "webpage"
+
+    def test_none_mime_pdf_extension(self):
+        assert classify_link_type(None, "https://x.com/paper.pdf") == "file"
+
+    def test_none_mime_docx_extension(self):
+        assert classify_link_type(None, "https://x.com/doc.docx") == "file"
+
+    def test_none_mime_no_extension(self):
+        assert classify_link_type(None, "https://x.com/page") == "webpage"
+
+    def test_spoofed_mime_defaults_to_webpage(self):
+        assert classify_link_type("application/x-fake", "https://x.com/a") == "webpage"
+
+    def test_mime_with_charset_stripped(self):
+        assert classify_link_type("application/pdf; charset=utf-8", "https://x.com/a") == "file"
+
+    def test_case_insensitive_mime(self):
+        assert classify_link_type("Application/PDF", "https://x.com/a") == "file"
+
+    def test_case_insensitive_extension(self):
+        assert classify_link_type(None, "https://x.com/Paper.PDF") == "file"

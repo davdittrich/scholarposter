@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import respx
 from scholarposter.adapters.linkedin import LinkedInAdapter
+from scholarposter.config import MediaConfig
 from scholarposter.models import UnifiedPost, MediaAttachment, LinkEnrichment, PostStatus
 
 
@@ -91,3 +92,64 @@ class TestLinkedInAdapter:
             post = make_post("Post with image", media=[att])
             result = adapter.post(post)
         assert result.status == PostStatus.POSTED
+
+class TestCardDescriptionInPayload:
+    """FR-20c, FR-34a: summary in article card, not in text."""
+
+    def test_summary_not_in_commentary(self):
+        """FR-20c: summary never appended to commentary text."""
+        adapter = LinkedInAdapter(
+            access_token="test-token", owner_urn="urn:li:person:test",
+            media_config=MediaConfig(enabled=True),
+        )
+        post = UnifiedPost(
+            source_id="1", text="Check this out", source_url="https://x.com/1",
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            links=[LinkEnrichment(
+                original_url="https://example.com",
+                summary="AI summary that should NOT be in text",
+            )],
+        )
+        payload = adapter._build_payload(post, image_urn=None)
+        assert "AI summary that should NOT be in text" not in payload["commentary"]
+
+    def test_article_uses_card_description(self):
+        """FR-34a: article description from link.card_description."""
+        adapter = LinkedInAdapter(
+            access_token="test-token", owner_urn="urn:li:person:test",
+            media_config=MediaConfig(enabled=True),
+        )
+        post = UnifiedPost(
+            source_id="1", text="Paper", source_url="https://x.com/1",
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            links=[LinkEnrichment(
+                original_url="https://example.com",
+                doi="10.1000/test",
+                crossref_title="Crossref Title",
+                crossref_abstract="Crossref Abstract",
+                title="OG Title",
+                description="OG Desc",
+            )],
+        )
+        payload = adapter._build_payload(post, image_urn=None)
+        # DOI link → card_description uses crossref_abstract
+        assert payload["content"]["article"]["description"] == "Crossref Abstract"
+        assert payload["content"]["article"]["title"] == "Crossref Title"
+
+    def test_most_enriched_link_selected(self):
+        """FR-34a: most enriched URL drives the article card."""
+        adapter = LinkedInAdapter(
+            access_token="test-token", owner_urn="urn:li:person:test",
+            media_config=MediaConfig(enabled=True),
+        )
+        post = UnifiedPost(
+            source_id="1", text="Two links", source_url="https://x.com/1",
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            links=[
+                LinkEnrichment(original_url="https://bare.com"),
+                LinkEnrichment(original_url="https://doi.org/10.1000/x", doi="10.1000/x",
+                               crossref_title="DOI Paper", crossref_abstract="DOI Abstract"),
+            ],
+        )
+        payload = adapter._build_payload(post, image_urn=None)
+        assert payload["content"]["article"]["source"] == "https://doi.org/10.1000/x"
