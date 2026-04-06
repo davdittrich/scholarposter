@@ -13,8 +13,11 @@ This manual step takes about 15 minutes. You only do it once.
 1. Go to [LinkedIn Developer Portal](https://www.linkedin.com/developers/apps) and click **Create app**.
 2. Fill in App name (e.g. "scholarposter"), associate it with a LinkedIn Company Page, upload a logo, and agree to the terms.
 3. On the **Products** tab, request access to:
-   - **Community Management API** (for posting)
+   - **Share on LinkedIn** or **Community Management API** (for posting — name varies by app type)
    - **Sign In with LinkedIn using OpenID Connect** (for refresh tokens)
+
+   If you already have a LinkedIn app with these products approved, you can reuse it —
+   just add the redirect URI and copy the Client ID/Secret.
 4. LinkedIn reviews requests manually — approval usually takes 1-3 business days.
 5. On the **Auth** tab, add this **Authorized Redirect URI**:
    ```
