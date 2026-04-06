@@ -1,6 +1,7 @@
 # scholarposter configuration — copy to config.toml and edit
 
 [mastodon]
+# Auto-populated by 'scholarposter auth mastodon'. Manual setup also works.
 instance = "https://fediscience.org"
 credentials_file = "pytooter_usercred.secret"
 

@@ -188,6 +188,9 @@ scholarposter loads credentials from a `.env` file via python-dotenv. Store `.en
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `MASTODON_INSTANCE` | managed by auth | Mastodon instance URL (auto-managed) |
+| `MASTODON_EMAIL` | managed by auth | Mastodon account email (auto-managed) |
+| `MASTODON_PASSWORD` | managed by auth | Mastodon password (cleared from memory after use) |
 | `BLUESKY_EMAIL` | if Bluesky enabled | Bluesky account email |
 | `BLUESKY_PASSWORD` | if Bluesky enabled | Bluesky app password (see [auth-bluesky.md](auth-bluesky.md)) |
 | `LINKEDIN_CLIENT_ID` | if LinkedIn enabled | LinkedIn app Client ID (from Developer Portal) |

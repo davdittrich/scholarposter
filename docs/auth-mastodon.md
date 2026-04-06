@@ -1,60 +1,47 @@
 # Mastodon authentication
 
-scholarposter reads your toots using the [Mastodon.py](https://mastodonpy.readthedocs.io/) library. It needs an access token stored in a `.secret` file — this is a one-time setup.
+scholarposter registers an app and logs in to your Mastodon instance automatically.
 
 ---
 
-## One-time setup
+## Automated setup
 
-Run the following Python snippet once, in the directory where you plan to keep the credential files. Replace the values in angle brackets.
-
-```python
-from mastodon import Mastodon
-
-# Step 1 — Register the application with your instance (creates a client credential file)
-Mastodon.create_app(
-    "scholarposter",
-    api_base_url="https://<your.instance>",   # e.g. https://fediscience.org
-    to_file="pytooter_clientcred.secret",
-)
-
-# Step 2 — Log in and save the user access token
-mastodon = Mastodon(
-    client_id="pytooter_clientcred.secret",
-    api_base_url="https://<your.instance>",
-)
-mastodon.log_in(
-    "<your-email@example.com>",
-    "<your-password>",
-    to_file="pytooter_usercred.secret",
-)
-
-print("Done. pytooter_usercred.secret written.")
+```bash
+scholarposter auth mastodon --config /path/to/config.toml
 ```
 
-This produces two files:
+The command prompts for your instance URL, email, and password (hidden input). It:
+- Registers a "scholarposter" app with your instance
+- Logs in and saves an access token to `pytooter_usercred.secret`
+- Stores credentials in `.env` for automatic token re-creation
+- Updates `config.toml` with the instance URL and credential file path
 
-- `pytooter_clientcred.secret` — app registration (keep it, but scholarposter doesn't use it directly)
-- `pytooter_usercred.secret` — your user access token (**keep this private**)
-
----
-
-## Configure scholarposter
-
-In `config.toml`, point `credentials_file` at the user credential file:
-
-```toml
-[mastodon]
-instance = "https://fediscience.org"
-credentials_file = "/home/user/scholarposter/pytooter_usercred.secret"
-```
-
-The path can be absolute or relative to the directory you run `scholarposter` from.
+For scripted setup (CI/automation), set `MASTODON_INSTANCE`, `MASTODON_EMAIL`, and `MASTODON_PASSWORD` in `.env` before running the command — it runs non-interactively when all three are present.
 
 ---
 
-## Notes
+## Token lifecycle
 
-- If your instance is not fediscience.org, change both `api_base_url` in the setup snippet and `instance` in `config.toml`.
-- The `.secret` files contain plain-text tokens. `install.sh` sets them to mode `600` automatically. Do not commit them to version control.
-- Mastodon.py user tokens do not expire unless you revoke them from your account settings (Settings > Authorized apps).
+Mastodon user tokens do not expire unless you revoke them from Settings → Authorized apps. If a token is revoked, scholarposter detects the 401 error and automatically re-creates the token using saved credentials from `.env`.
+
+If `.env` credentials are not available (e.g., you chose not to store the password), scholarposter prints an error message and asks you to re-run `scholarposter auth mastodon`.
+
+---
+
+## 2FA accounts
+
+If your account has two-factor authentication enabled, `scholarposter auth mastodon` cannot log in automatically. Instead:
+
+1. Go to your Mastodon instance → Settings → Development → New Application
+2. Set the application name (e.g. "scholarposter") and create it
+3. Copy the access token
+4. Create `pytooter_usercred.secret` manually with the token as its only content
+5. Set `credentials_file` in `config.toml` to point to this file
+
+---
+
+## Security notes
+
+- `.secret` files contain plain-text tokens. `install.sh` sets them to mode 600.
+- If you store `MASTODON_PASSWORD` in `.env`, it enables unattended token re-creation. For higher security, omit it — you will need to re-run `auth mastodon` manually if the token is ever revoked.
+- The password is cleared from process memory immediately after use.

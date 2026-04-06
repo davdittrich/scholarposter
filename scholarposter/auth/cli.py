@@ -1,6 +1,8 @@
-"""LinkedIn OAuth CLI command: scholarposter auth linkedin."""
+"""Authentication CLI commands: scholarposter auth linkedin | mastodon."""
 from __future__ import annotations
 
+import getpass
+import os
 import secrets
 import urllib.parse
 import webbrowser
@@ -109,3 +111,122 @@ def linkedin(
     except OAuthError as e:
         typer.echo(f"Error: {e.message}", err=True)
         raise typer.Exit(code=e.exit_code)
+
+
+@auth_app.command(name="mastodon")
+def mastodon_auth(
+    config: Path = typer.Option("config.toml", help="Path to config file"),
+) -> None:
+    """Register app and log in to a Mastodon instance."""
+    from mastodon import Mastodon, MastodonAPIError
+
+    env_path = config.parent.resolve() / ".env"
+    env = read_env(env_path)
+
+    # FR-66: non-interactive if all three env vars present
+    instance = env.get("MASTODON_INSTANCE")
+    email = env.get("MASTODON_EMAIL")
+    password = env.get("MASTODON_PASSWORD")
+    interactive = not (instance and email and password)
+
+    if interactive:
+        instance = typer.prompt("Mastodon instance URL", default=instance or "")
+        email = typer.prompt("Email", default=email or "")
+        password = getpass.getpass("Password: ")
+
+    # FR-65: URL normalization
+    if instance and not instance.startswith(("http://", "https://")):
+        instance = f"https://{instance}"
+    if instance:
+        instance = instance.rstrip("/")
+
+    if not instance or not email or not password:
+        typer.echo("Instance URL, email, and password are all required.", err=True)
+        raise typer.Exit(code=2)
+
+    config_dir = config.parent.resolve()
+    client_cred = config_dir / "pytooter_clientcred.secret"
+    user_cred = config_dir / "pytooter_usercred.secret"
+
+    # FR-70: re-run idempotency
+    if interactive and user_cred.exists():
+        if not typer.confirm("Existing credentials will be overwritten. Continue?", default=False):
+            raise typer.Exit(code=0)
+
+    # FR-67: register app
+    typer.echo(f"Registering app with {instance}...")
+    try:
+        Mastodon.create_app(
+            "scholarposter",
+            api_base_url=instance,
+            to_file=str(client_cred),
+        )
+        os.chmod(client_cred, 0o600)
+    except Exception as e:
+        typer.echo(f"Could not reach {instance}. Check the URL and try again.\n  Detail: {e}", err=True)
+        raise typer.Exit(code=2)
+
+    # FR-68: log in
+    typer.echo("Logging in...")
+    try:
+        m = Mastodon(client_id=str(client_cred), api_base_url=instance)
+        m.log_in(email, password, to_file=str(user_cred))
+        os.chmod(user_cred, 0o600)
+    except MastodonAPIError as e:
+        err_str = str(e).lower()
+        if any(kw in err_str for kw in ("two-factor", "2fa", "mfa", "otp")):
+            typer.echo(
+                "Your account has 2FA enabled. Create a token manually:\n"
+                "  Settings → Development → New Application\n"
+                "Then set credentials_file in config.toml.",
+                err=True,
+            )
+        else:
+            typer.echo(f"Login failed: {e}. Check your email and password.", err=True)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        typer.echo(f"Could not reach {instance}. Check the URL and try again.\n  Detail: {e}", err=True)
+        raise typer.Exit(code=2)
+
+    # FR-69: store credentials in .env (password for auto re-create)
+    write_env(env_path, {
+        "MASTODON_INSTANCE": instance,
+        "MASTODON_EMAIL": email,
+        "MASTODON_PASSWORD": password,
+    })
+    # Security: clear password from environ immediately
+    if "MASTODON_PASSWORD" in os.environ:
+        del os.environ["MASTODON_PASSWORD"]
+
+    # FR-70: update config.toml
+    _update_config_toml(config.parent.resolve() / config.name, instance, str(user_cred))
+
+    typer.echo(f"Mastodon app registered and logged in. Credentials saved to {config_dir}.")
+
+
+def _update_config_toml(config_path: Path, instance: str, credentials_file: str) -> None:
+    """Update [mastodon] section in config.toml via tomli_w. Preserves other sections."""
+    import tomllib
+    import tomli_w
+
+    resolved = config_path if config_path.is_absolute() else config_path.resolve()
+    if resolved.exists():
+        with open(resolved, "rb") as f:
+            data = tomllib.load(f)
+    else:
+        data = {}
+
+    data.setdefault("mastodon", {})
+    data["mastodon"]["instance"] = instance
+    data["mastodon"]["credentials_file"] = credentials_file
+
+    # Atomic write
+    tmp = resolved.parent / (resolved.name + ".tmp")
+    fd = os.open(str(tmp), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            tomli_w.dump(data, f)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    os.rename(str(tmp), str(resolved))

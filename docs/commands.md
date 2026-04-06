@@ -74,6 +74,18 @@ Authorize scholarposter to post to LinkedIn via OAuth 2.0.
 
 Requires `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` in `.env`. See [auth-linkedin.md](auth-linkedin.md) for setup.
 
+### `scholarposter auth mastodon`
+
+Register app and log in to a Mastodon instance.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--config` | `config.toml` | Path to config file |
+
+Prompts for instance URL, email, and password (hidden). If `MASTODON_INSTANCE`, `MASTODON_EMAIL`, and `MASTODON_PASSWORD` are in `.env`, runs non-interactively.
+
+Updates `config.toml` and writes credential files. See [auth-mastodon.md](auth-mastodon.md) for details.
+
 ### `config validate`
 
 Print parsed configuration with sensitive fields (credentials, tokens) redacted.

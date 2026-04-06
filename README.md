@@ -70,7 +70,7 @@ Verify:
 
 ### Post-install setup
 
-- [ ] **Mastodon credentials** — see [docs/auth-mastodon.md](docs/auth-mastodon.md)
+- [ ] **Mastodon credentials** — run `scholarposter auth mastodon` (see [docs/auth-mastodon.md](docs/auth-mastodon.md))
 - [ ] **Edit `config.toml`** — set instance URL and credentials file path
 - [ ] **Bluesky credentials** — see [docs/auth-bluesky.md](docs/auth-bluesky.md)
 - [ ] **LinkedIn credentials** — run `scholarposter auth linkedin` (see [docs/auth-linkedin.md](docs/auth-linkedin.md))
