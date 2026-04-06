@@ -289,7 +289,7 @@ def _build_mastodon_client(
     cfg: ScholarposterConfig,
     env_path: Optional[Path] = None,
 ) -> Mastodon:
-    """Construct Mastodon client with token validation. Auto re-creates on 401."""
+    """Construct Mastodon client with token validation. Exits 1 on 401 with re-auth instructions."""
     mastodon_client = Mastodon(
         access_token=cfg.mastodon.credentials_file,
         api_base_url=cfg.mastodon.instance,
@@ -299,50 +299,19 @@ def _build_mastodon_client(
         return mastodon_client
     except MastodonAPIError as e:
         if hasattr(e, "response") and getattr(e.response, "status_code", None) == 401:
-            pass  # fall through to re-create
+            logger.error("Mastodon token revoked. Run `scholarposter auth mastodon` to re-authorize.")
+            if env_path:
+                _send_refresh_notification(
+                    env_path,
+                    "Mastodon token revoked. Run `scholarposter auth mastodon` to re-authorize."
+                )
+            raise typer.Exit(code=1)
         else:
             logger.warning(f"Mastodon verify_credentials failed: {_redact(str(e))}")
             return mastodon_client
     except Exception as e:
         logger.warning(f"Mastodon verify_credentials failed (non-API): {_redact(str(e))}")
         return mastodon_client
-
-    # 401 — attempt auto re-create
-    logger.warning("Mastodon token revoked (401). Attempting re-creation...")
-    email = os.environ.get("MASTODON_EMAIL")
-    password = os.environ.get("MASTODON_PASSWORD")
-    if not email or not password:
-        logger.error("Mastodon token revoked. Run `scholarposter auth mastodon` to re-authorize.")
-        raise typer.Exit(code=1)
-
-    config_dir = Path(cfg.mastodon.credentials_file).parent
-    client_cred = config_dir / "pytooter_clientcred.secret"
-    user_cred = Path(cfg.mastodon.credentials_file)
-
-    try:
-        if not client_cred.exists():
-            Mastodon.create_app("scholarposter", api_base_url=cfg.mastodon.instance, to_file=str(client_cred))
-            os.chmod(client_cred, 0o600)
-
-        m = Mastodon(client_id=str(client_cred), api_base_url=cfg.mastodon.instance)
-        m.log_in(email, password, to_file=str(user_cred))
-        os.chmod(user_cred, 0o600)
-    except Exception as e:
-        logger.error(f"Mastodon token re-creation failed: {_redact(str(e))}")
-        if env_path:
-            _send_refresh_notification(
-                env_path,
-                f"Mastodon token re-creation failed. Run `scholarposter auth mastodon`."
-            )
-        raise typer.Exit(code=1)
-    finally:
-        if "MASTODON_PASSWORD" in os.environ:
-            del os.environ["MASTODON_PASSWORD"]
-
-    return Mastodon(
-        access_token=cfg.mastodon.credentials_file,
-        api_base_url=cfg.mastodon.instance,
-    )
 
 
 def _dispatch_post(

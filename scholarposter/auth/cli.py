@@ -1,7 +1,6 @@
 """Authentication CLI commands: scholarposter auth linkedin | mastodon."""
 from __future__ import annotations
 
-import getpass
 import os
 import secrets
 import urllib.parse
@@ -116,32 +115,31 @@ def linkedin(
 @auth_app.command(name="mastodon")
 def mastodon_auth(
     config: Path = typer.Option("config.toml", help="Path to config file"),
+    port: int = typer.Option(8080, help="Local callback server port (desktop mode)"),
 ) -> None:
-    """Register app and log in to a Mastodon instance."""
-    from mastodon import Mastodon, MastodonAPIError
+    """Register app and log in to a Mastodon instance via OAuth."""
+    from mastodon import Mastodon
 
     env_path = config.parent.resolve() / ".env"
     env = read_env(env_path)
 
-    # FR-66: non-interactive if all three env vars present
+    # FR-66: use instance from .env if available
     instance = env.get("MASTODON_INSTANCE")
-    email = env.get("MASTODON_EMAIL")
-    password = env.get("MASTODON_PASSWORD")
-    interactive = not (instance and email and password)
+    interactive = not instance
 
     if interactive:
-        instance = typer.prompt("Mastodon instance URL", default=instance or "")
-        email = typer.prompt("Email", default=email or "")
-        password = getpass.getpass("Password: ")
+        instance = typer.prompt("Mastodon instance URL", default="")
 
-    # FR-65: URL normalization
+    # FR-65: URL normalization + reject http://
     if instance and not instance.startswith(("http://", "https://")):
         instance = f"https://{instance}"
     if instance:
         instance = instance.rstrip("/")
-
-    if not instance or not email or not password:
-        typer.echo("Instance URL, email, and password are all required.", err=True)
+    if not instance:
+        typer.echo("Instance URL is required.", err=True)
+        raise typer.Exit(code=2)
+    if instance.startswith("http://"):
+        typer.echo("Mastodon instances require HTTPS. Use https:// instead.", err=True)
         raise typer.Exit(code=2)
 
     config_dir = config.parent.resolve()
@@ -153,12 +151,21 @@ def mastodon_auth(
         if not typer.confirm("Existing credentials will be overwritten. Continue?", default=False):
             raise typer.Exit(code=0)
 
+    # Determine redirect URI based on environment
+    headless = is_headless()
+    if headless:
+        redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+    else:
+        redirect_uri = f"http://localhost:{port}/callback"
+
     # FR-67: register app
     typer.echo(f"Registering app with {instance}...")
     try:
         Mastodon.create_app(
             "scholarposter",
             api_base_url=instance,
+            redirect_uris=redirect_uri,
+            scopes=["read"],
             to_file=str(client_cred),
         )
         os.chmod(client_cred, 0o600)
@@ -166,42 +173,39 @@ def mastodon_auth(
         typer.echo(f"Could not reach {instance}. Check the URL and try again.\n  Detail: {e}", err=True)
         raise typer.Exit(code=2)
 
-    # FR-68: log in
-    typer.echo("Logging in...")
+    # FR-68: OAuth code flow
+    typer.echo("Authorizing...")
+    mastodon = Mastodon(client_id=str(client_cred), api_base_url=instance)
+    auth_url = mastodon.auth_request_url(redirect_uris=redirect_uri, scopes=["read"])
+
     try:
-        m = Mastodon(client_id=str(client_cred), api_base_url=instance)
-        m.log_in(email, password, to_file=str(user_cred))
-        os.chmod(user_cred, 0o600)
-    except MastodonAPIError as e:
-        err_str = str(e).lower()
-        if any(kw in err_str for kw in ("two-factor", "2fa", "mfa", "otp")):
-            typer.echo(
-                "Your account has 2FA enabled. Create a token manually:\n"
-                "  Settings → Development → New Application\n"
-                "Then set credentials_file in config.toml.",
-                err=True,
-            )
+        if headless:
+            typer.echo(f"\nOpen this URL in your browser:\n\n  {auth_url}\n")
+            auth_code = typer.prompt("Paste the code shown on the Mastodon authorization page")
         else:
-            typer.echo(f"Login failed: {e}. Check your email and password.", err=True)
-        raise typer.Exit(code=2)
+            typer.echo(f"\nAuthorization URL (also opening in browser):\n\n  {auth_url}\n")
+            typer.echo("Click 'Authorize' in your browser, then return here.\n")
+            webbrowser.open(auth_url)
+            auth_code = wait_for_callback_desktop(port=port, expected_state=None)
+    except OAuthError as e:
+        typer.echo(f"Error: {e.message}", err=True)
+        raise typer.Exit(code=e.exit_code)
+
+    # Exchange code for token
+    try:
+        mastodon.log_in(code=auth_code, redirect_uri=redirect_uri, scopes=["read"], to_file=str(user_cred))
+        os.chmod(user_cred, 0o600)
     except Exception as e:
-        typer.echo(f"Could not reach {instance}. Check the URL and try again.\n  Detail: {e}", err=True)
+        typer.echo(f"Token exchange failed: {e}", err=True)
         raise typer.Exit(code=2)
 
-    # FR-69: store credentials in .env (password for auto re-create)
-    write_env(env_path, {
-        "MASTODON_INSTANCE": instance,
-        "MASTODON_EMAIL": email,
-        "MASTODON_PASSWORD": password,
-    })
-    # Security: clear password from environ immediately
-    if "MASTODON_PASSWORD" in os.environ:
-        del os.environ["MASTODON_PASSWORD"]
+    # FR-69: store instance in .env (no password needed)
+    write_env(env_path, {"MASTODON_INSTANCE": instance})
 
     # FR-70: update config.toml
     _update_config_toml(config.parent.resolve() / config.name, instance, str(user_cred))
 
-    typer.echo(f"Mastodon app registered and logged in. Credentials saved to {config_dir}.")
+    typer.echo(f"Mastodon authorized. Credentials saved to {config_dir}.")
 
 
 def _update_config_toml(config_path: Path, instance: str, credentials_file: str) -> None:

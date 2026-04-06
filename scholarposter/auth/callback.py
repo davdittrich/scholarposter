@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
 
@@ -54,7 +55,7 @@ def is_headless() -> bool:
     )
 
 
-def wait_for_callback_desktop(port: int, expected_state: str, timeout: float = 120.0) -> str:
+def wait_for_callback_desktop(port: int, expected_state: Optional[str] = None, timeout: float = 120.0) -> str:
     """Start HTTP server on 127.0.0.1:{port}, wait for OAuth callback, return authorization code.
 
     Raises OAuthError on timeout, denied, invalid state, or port conflict.
@@ -83,13 +84,13 @@ def wait_for_callback_desktop(port: int, expected_state: str, timeout: float = 1
     if not server._oauth_code:
         raise OAuthError("Authorization timed out. Run `scholarposter auth linkedin` to try again.")
 
-    if server._oauth_state != expected_state:
+    if expected_state is not None and server._oauth_state != expected_state:
         raise OAuthError("Invalid state parameter in callback. Possible CSRF attack. Try again.")
 
     return server._oauth_code
 
 
-def wait_for_callback_headless(expected_state: str) -> str:
+def wait_for_callback_headless(expected_state: Optional[str] = None) -> str:
     """Prompt user to paste callback URL, extract code, validate state.
 
     Raises OAuthError on malformed input or state mismatch.
@@ -118,7 +119,7 @@ def wait_for_callback_headless(expected_state: str) -> str:
             "Expected format: http://localhost:8080/callback?code=...&state=..."
         )
 
-    if state_list[0] != expected_state:
+    if expected_state is not None and state_list[0] != expected_state:
         raise OAuthError("Invalid state parameter. Possible CSRF attack. Try again.")
 
     return code_list[0]
