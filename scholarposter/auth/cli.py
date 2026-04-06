@@ -71,7 +71,7 @@ def linkedin(
         "https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code&client_id={client_id}"
         f"&redirect_uri={urllib.parse.quote(redirect_uri, safe='')}"
-        "&scope=openid%20profile%20w_member_social"
+        "&scope=openid%20profile%20w_member_social%20offline_access"
         f"&state={state}"
     )
 
