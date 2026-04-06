@@ -2,13 +2,7 @@
 
 ## Global Flags
 
-The `run`, `status`, and `retry` commands accept these flags:
-
-| Flag | Effect |
-|------|--------|
-| `--config PATH` | Path to config file (default: `config.toml`) |
-| `--verbose` | Enable DEBUG logging to stderr |
-| `--quiet` | Suppress INFO, show WARNING and above |
+All commands accept `--config PATH` (default: `config.toml`). The `run`, `status`, and `retry` commands additionally accept `--verbose` (DEBUG logging to stderr) and `--quiet` (suppress INFO, show WARNING and above).
 
 ---
 
@@ -46,6 +40,7 @@ scholarposter retry --platform bluesky --toot-id 123456789 [--dry-run]
 
 | Flag | Required | Description |
 |------|----------|-------------|
+| `--config` | no | Path to config file (default: `config.toml`) |
 | `--platform` | yes | `bluesky` or `linkedin` |
 | `--toot-id` | yes | Mastodon toot ID to retry |
 | `--dry-run` | no | Simulate without posting |
@@ -76,15 +71,14 @@ Requires `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` in `.env`. See [auth-
 
 ### `scholarposter auth mastodon`
 
-Register app and log in to a Mastodon instance.
+Register an OAuth app on a Mastodon instance and authorize scholarposter via the OAuth code flow.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--config` | `config.toml` | Path to config file |
+| `--config` | `config.toml` | Path to config file (`.env` is resolved from the same directory) |
+| `--port` | `8080` | Local port for the OAuth callback server (desktop mode) |
 
-Prompts for instance URL, email, and password (hidden). If `MASTODON_INSTANCE`, `MASTODON_EMAIL`, and `MASTODON_PASSWORD` are in `.env`, runs non-interactively.
-
-Updates `config.toml` and writes credential files. See [auth-mastodon.md](auth-mastodon.md) for details.
+Prompts for the instance URL the first time, or reads `MASTODON_INSTANCE` from `.env` on subsequent runs. Opens your browser to the Mastodon authorization page (or prints the URL on headless servers). Writes `pytooter_clientcred.secret` and `pytooter_usercred.secret` (`chmod 600`) and updates the `[mastodon]` section of `config.toml`. See [auth-mastodon.md](auth-mastodon.md) for details.
 
 ### `config validate`
 
@@ -110,7 +104,7 @@ scholarposter bibliography [--format bibtex|json|markdown] [--output FILE]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--format` | `bibtex` | Output format |
-| `--output` | stdout | Write to file instead of stdout |
+| `--output` / `-o` | stdout | Write to file instead of stdout |
 
 BibTeX output escapes all LaTeX special characters (`& % $ # _ { } ~ ^ \`).
 Publication year is extracted from Crossref metadata when available.

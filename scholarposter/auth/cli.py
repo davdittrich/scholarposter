@@ -29,7 +29,7 @@ SETUP_INSTRUCTIONS = """LinkedIn OAuth setup required. Follow these steps:
    (or reuse an existing app)
 2. On the Products tab, enable:
    - "Share on LinkedIn" (for posting)
-   - "Sign In with LinkedIn using OpenID Connect" (for refresh tokens)
+   - "Sign In with LinkedIn using OpenID Connect" (required for member URN lookup)
    Note: "Community Management API" also works for posting if available.
 3. On the Auth tab, add this redirect URI: http://localhost:8080/callback
 4. Copy your Client ID and Client Secret, then add to .env:

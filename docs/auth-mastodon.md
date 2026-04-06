@@ -48,6 +48,10 @@ There is no automatic token re-creation — the OAuth flow requires browser inte
 
 ## Security notes
 
-- `.secret` files contain plain-text tokens. `install.sh` sets them to mode 600.
+- `.secret` files contain plain-text tokens. `scholarposter auth mastodon` writes them with mode 600.
 - Only `MASTODON_INSTANCE` is stored in `.env` — no email or password.
 - The OAuth scope is `read` only — scholarposter cannot post to or modify your Mastodon account.
+
+## Migration from older versions
+
+Versions before the OAuth rewrite used `MASTODON_EMAIL` and `MASTODON_PASSWORD` in `.env`. These variables are now ignored — Mastodon 4.4.0 removed the password grant. If your `.env` still has them, they cause no harm (no code reads them) but you should remove them and re-run `scholarposter auth mastodon` to obtain an OAuth token.

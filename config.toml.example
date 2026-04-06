@@ -102,6 +102,12 @@ server = "https://ntfy.sh"
 # from_addr = "alerts@example.com"
 # to_addr = "you@example.com"
 
+# [[notifications.backends]]
+# type = "signal"
+# api_url = "http://localhost:8080"
+# phone_number = "+1234567890"
+# recipients = ["+0987654321"]
+
 [logging]
 level = "INFO"  # DEBUG, INFO, WARNING, ERROR
 file = "scholarposter.log"

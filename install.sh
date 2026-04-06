@@ -45,6 +45,14 @@ cp "$SOURCE_DIR/pyproject.toml"      "$DEST_DIR/pyproject.toml"
 cp "$SOURCE_DIR/config.toml.example" "$DEST_DIR/config.toml.example"
 cp "$SOURCE_DIR/.env.example"        "$DEST_DIR/.env.example"
 
+# Copy docs (the install banner references them)
+if command -v rsync &>/dev/null; then
+    rsync -a --delete "$SOURCE_DIR/docs/" "$DEST_DIR/docs/"
+else
+    rm -rf "$DEST_DIR/docs"
+    cp -r "$SOURCE_DIR/docs" "$DEST_DIR/docs"
+fi
+
 # ── Create / reuse virtualenv ──────────────────────────────────────────────────
 VENV="$DEST_DIR/.venv"
 if [[ ! -d "$VENV" ]]; then

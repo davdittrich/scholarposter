@@ -259,8 +259,8 @@ scholarposter/
 ├── migration.py            # Legacy lasttoot*.txt → state.json migration
 ├── env_writer.py           # Atomic .env read/write with 0600 permissions
 ├── auth/
-│   ├── cli.py              # scholarposter auth linkedin — OAuth sub-app
-│   ├── oauth.py            # Token exchange, URN lookup, refresh
+│   ├── cli.py              # scholarposter auth linkedin | mastodon — OAuth sub-app
+│   ├── oauth.py            # LinkedIn token exchange and member URN lookup
 │   └── callback.py         # Desktop HTTP callback server + headless paste
 ├── enrichment/
 │   ├── pipeline.py         # 5-stage enrichment orchestrator
@@ -295,6 +295,7 @@ scholarposter/
 | `ModuleNotFoundError` | Wrong Python binary | Use full path: `.venv/bin/scholarposter` |
 | `Config not found` | Missing config.toml | Copy `config.toml.example` to `config.toml` |
 | `Missing BLUESKY_EMAIL env var` | .env not loaded | Verify `.env` exists and has credentials |
+| `Mastodon token revoked` | App authorization removed | Re-run `scholarposter auth mastodon`; see [docs/auth-mastodon.md](docs/auth-mastodon.md) |
 
 ---
 
