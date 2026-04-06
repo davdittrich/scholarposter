@@ -73,7 +73,7 @@ Verify:
 - [ ] **Mastodon credentials** — see [docs/auth-mastodon.md](docs/auth-mastodon.md)
 - [ ] **Edit `config.toml`** — set instance URL and credentials file path
 - [ ] **Bluesky credentials** — see [docs/auth-bluesky.md](docs/auth-bluesky.md)
-- [ ] **LinkedIn credentials** — see [docs/auth-linkedin.md](docs/auth-linkedin.md)
+- [ ] **LinkedIn credentials** — run `scholarposter auth linkedin` (see [docs/auth-linkedin.md](docs/auth-linkedin.md))
 - [ ] **Summarization** (optional) — see [docs/summarization.md](docs/summarization.md)
 
 ---
@@ -156,7 +156,7 @@ Prints parsed config with sensitive fields redacted.
 
 ## Global flags
 
-All commands accept:
+The `run`, `status`, and `retry` commands accept:
 
 | Flag | Effect |
 |------|--------|
@@ -243,7 +243,7 @@ See [docs/configuration.md](docs/configuration.md) for Signal and email backends
 
 ```
 scholarposter/
-├── cli.py                  # Typer CLI — 7 commands
+├── cli.py                  # Typer CLI — 7 commands + auth sub-app
 ├── config.py               # Pydantic config models + TOML loading
 ├── models.py               # UnifiedPost, LinkType, card_description/card_title, PostResult
 ├── state.py                # JSON state/cache, file locking, bibliography
@@ -253,6 +253,11 @@ scholarposter/
 ├── bibliography.py         # BibTeX and Markdown export formatting
 ├── discovery.py            # OpenAlex paper discovery
 ├── migration.py            # Legacy lasttoot*.txt → state.json migration
+├── env_writer.py           # Atomic .env read/write with 0600 permissions
+├── auth/
+│   ├── cli.py              # scholarposter auth linkedin — OAuth sub-app
+│   ├── oauth.py            # Token exchange, URN lookup, refresh
+│   └── callback.py         # Desktop HTTP callback server + headless paste
 ├── enrichment/
 │   ├── pipeline.py         # 5-stage enrichment orchestrator
 │   ├── url.py              # URL unshortening, content-type detection, link type classification
@@ -278,7 +283,7 @@ scholarposter/
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `Another instance is running` | Stale lock | `rm scholarposter.lock` |
+| `Another instance is already running` | Stale lock | `rm scholarposter.lock` |
 | No posts, no errors | All toots processed | `scholarposter status` to check |
 | `HTTP 401` on LinkedIn | Token expired (60-day TTL) | Re-run OAuth; see [docs/auth-linkedin.md](docs/auth-linkedin.md) |
 | Summarization falls back to extractive | LLM backends unreachable | Check PATH; verify Lemonade/Ollama running; see [docs/summarization.md](docs/summarization.md) |

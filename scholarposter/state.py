@@ -5,7 +5,7 @@ import fcntl
 import json
 import os
 from contextlib import contextmanager
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from pathlib import Path
 from typing import Any, Generator, Optional
 
@@ -45,17 +45,16 @@ class StateManager:
         if self._lock_fd is None:
             logger.warning("update_platform_state called without holding lock")
         state = self.load_state()
-        entry = state.get(platform, {}).copy()  # preserve existing fields
-        if ps.last_toot_id is not None:
-            entry["last_toot_id"] = ps.last_toot_id
-        if ps.last_status is not None:
-            entry["last_status"] = ps.last_status
-        if ps.last_posted_at is not None:
-            entry["last_posted_at"] = ps.last_posted_at.isoformat()
-        if ps.last_error is not None:
-            entry["last_error"] = ps.last_error
-        elif ps.last_status is not None and ps.last_status != "failed":
-            # On non-failure, clear any stale error from prior run
+        entry = state.get(platform, {}).copy()
+        for key, value in ps.model_dump(exclude_unset=True).items():
+            if value is None:
+                entry.pop(key, None)
+            elif isinstance(value, (datetime, date)):
+                entry[key] = value.isoformat()
+            else:
+                entry[key] = value
+        # Clear stale error on non-failure status
+        if ps.last_status is not None and ps.last_status != "failed" and ps.last_error is None:
             entry.pop("last_error", None)
         state[platform] = entry
         self._save_state(state)

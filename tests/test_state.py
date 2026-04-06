@@ -243,6 +243,36 @@ class TestUpdatePlatformStateMerge:
         # last_posted_at from legacy data must be preserved
         assert state["bluesky"]["last_posted_at"] == "2024-01-01T00:00:00+00:00"
 
+    def test_auth_status_survives_toot_update(self, state_dir):
+        mgr = StateManager(state_dir=state_dir)
+        with mgr.lock():
+            mgr.update_platform_state("linkedin", PlatformState(auth_status="auth_expired"))
+            mgr.update_platform_state("linkedin", PlatformState(last_toot_id=999))
+        state = mgr.load_state()
+        assert state["linkedin"]["auth_status"] == "auth_expired"
+        assert state["linkedin"]["last_toot_id"] == 999
+
+    def test_refresh_failure_count_preserved(self, state_dir):
+        mgr = StateManager(state_dir=state_dir)
+        with mgr.lock():
+            mgr.update_platform_state("linkedin", PlatformState(refresh_failure_count=2))
+            mgr.update_platform_state("linkedin", PlatformState(last_status="posted"))
+        state = mgr.load_state()
+        assert state["linkedin"]["refresh_failure_count"] == 2
+
+    def test_refresh_warning_cleared_by_explicit_none(self, state_dir):
+        from datetime import date
+        mgr = StateManager(state_dir=state_dir)
+        with mgr.lock():
+            mgr.update_platform_state("linkedin", PlatformState(
+                refresh_warning_last_sent=date(2026, 4, 1),
+            ))
+            mgr.update_platform_state("linkedin", PlatformState(
+                refresh_warning_last_sent=None,
+            ))
+        state = mgr.load_state()
+        assert "refresh_warning_last_sent" not in state["linkedin"]
+
 
 class TestUpdatePlatformStateLockWarning:
     def test_warning_logged_when_called_without_lock(self, mgr):

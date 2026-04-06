@@ -1,111 +1,68 @@
 # LinkedIn authentication
 
-scholarposter posts to LinkedIn using the **Community Management API**. This requires an approved LinkedIn Developer app and a manually obtained OAuth 2.0 access token. The process takes about 15 minutes the first time.
+scholarposter automates LinkedIn OAuth 2.0 — you run one command, click "Allow"
+in your browser, and token management (storage, refresh, expiry warning) is
+handled automatically.
 
 ---
 
-## Step 1 — Create a LinkedIn Developer app
+## One-time setup: create a LinkedIn Developer app
+
+This manual step takes about 15 minutes. You only do it once.
 
 1. Go to [LinkedIn Developer Portal](https://www.linkedin.com/developers/apps) and click **Create app**.
-2. Fill in App name (e.g. "scholarposter"), associate it with a LinkedIn Company Page (required), upload a logo, and agree to the terms.
-3. On the **Products** tab, click **Request access** for **Community Management API**.
-4. LinkedIn reviews requests manually. Approval usually takes 1-3 business days.
-
-Once approved, the **Auth** tab will show the required scopes: `w_member_social`, `openid`, `profile`.
-
----
-
-## Step 2 — Get your Client ID and Client Secret
-
-On the **Auth** tab:
-
-- Copy **Client ID** → `CLIENT_ID`
-- Copy **Client Secret** → `CLIENT_SECRET`
-
-Add a redirect URI. For the local capture trick below, use:
-
-```
-http://localhost:8080/callback
-```
+2. Fill in App name (e.g. "scholarposter"), associate it with a LinkedIn Company Page, upload a logo, and agree to the terms.
+3. On the **Products** tab, request access to:
+   - **Community Management API** (for posting)
+   - **Sign In with LinkedIn using OpenID Connect** (for refresh tokens)
+4. LinkedIn reviews requests manually — approval usually takes 1-3 business days.
+5. On the **Auth** tab, add this **Authorized Redirect URI**:
+   ```
+   http://localhost:8080/callback
+   ```
+6. Copy **Client ID** and **Client Secret** and add them to your `.env` file:
+   ```bash
+   LINKEDIN_CLIENT_ID=your-client-id
+   LINKEDIN_CLIENT_SECRET=your-client-secret
+   ```
 
 ---
 
-## Step 3 — Start a local redirect listener
-
-Open a terminal and start a minimal HTTP server to catch the OAuth callback:
+## Authorize scholarposter
 
 ```bash
-python3 -m http.server 8080
+scholarposter auth linkedin --config /path/to/config.toml
 ```
 
-Leave this running.
+This command:
+- Opens your browser to LinkedIn's authorization page (or prints the URL on headless servers)
+- Captures the OAuth callback automatically
+- Exchanges the code for access + refresh tokens
+- Looks up your LinkedIn Member URN
+- Stores all credentials in `.env`
+
+On headless servers (no display), the command prints the authorization URL and prompts you to paste the callback URL from your browser.
 
 ---
 
-## Step 4 — Authorize in the browser
+## Token lifecycle
 
-Build the authorization URL and open it in your browser (replace `CLIENT_ID` with your actual value):
+| Token | Lifetime | Management |
+|-------|----------|------------|
+| Access token | 60 days | Auto-refreshed before each post when within 24 hours of expiry |
+| Refresh token | 365 days | scholarposter warns 7 days before expiry via configured notifications |
 
-```
-https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&scope=openid%20profile%20w_member_social
-```
-
-Log in and click **Allow**. You will be redirected to `http://localhost:8080/callback?code=AQ...`.
-
-The Python HTTP server will print the full request path. Copy the `code` value from the URL.
+After the refresh token expires, re-run `scholarposter auth linkedin`.
 
 ---
 
-## Step 5 — Exchange the code for an access token
+## Troubleshooting
 
-```bash
-CLIENT_ID="your-client-id"
-CLIENT_SECRET="your-client-secret"
-CODE="AQ..."          # the code from Step 4
+| Symptom | Fix |
+|---------|-----|
+| `LinkedIn requires OAuth setup` | Run `scholarposter auth linkedin` |
+| `LinkedIn: DISABLED (auth expired)` | Refresh token revoked or 3+ refresh failures. Re-run `scholarposter auth linkedin` |
+| `Port 8080 is in use` | Use `--port 9090` (update redirect URI in LinkedIn app to match) |
+| `LinkedIn did not return a refresh token` | Enable "Sign In with LinkedIn using OpenID Connect" on your app's Products tab |
 
-curl -s -X POST "https://www.linkedin.com/oauth/v2/accessToken" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=authorization_code" \
-  -d "code=$CODE" \
-  -d "redirect_uri=http://localhost:8080/callback" \
-  -d "client_id=$CLIENT_ID" \
-  -d "client_secret=$CLIENT_SECRET"
-```
-
-The response JSON contains `access_token`. Copy it.
-
----
-
-## Step 6 — Get your Member URN
-
-```bash
-TOKEN="AQX..."   # your access token from Step 5
-
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "https://api.linkedin.com/v2/userinfo"
-```
-
-The response looks like:
-
-```json
-{"sub": "abcDEF123", "name": "Your Name", ...}
-```
-
-Your Member URN is `urn:li:person:<sub>`, e.g. `urn:li:person:abcDEF123`.
-
----
-
-## Step 7 — Save credentials to `.env`
-
-```bash
-LINKEDIN_ACCESS_TOKEN="AQX..."
-LINKEDIN_OWNER_URN="urn:li:person:abcDEF123"
-```
-
----
-
-## Token expiry
-
-LinkedIn access tokens expire after **60 days**. There is no automatic refresh in scholarposter. When your token expires, repeat Steps 3–7 to get a new one.
-
-You will know the token has expired when scholarposter logs `HTTP 401` errors for LinkedIn posts.
+Check token status: `scholarposter status`

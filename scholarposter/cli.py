@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -21,9 +21,11 @@ from scholarposter.filters import evaluate_filters
 from scholarposter.models import BibliographyEntry, PlatformState, PostResult, PostStatus, UnifiedPost
 from scholarposter.notifications.base import BaseNotifier
 from scholarposter.notifications.ntfy import NtfyNotifier
+from scholarposter.auth.cli import auth_app
 from scholarposter.state import StateManager
 
 app = typer.Typer(help="Mastodon cross-poster for academics.")
+app.add_typer(auth_app, name="auth")
 
 VALID_PLATFORMS = {"bluesky", "linkedin", "all"}
 
@@ -31,12 +33,17 @@ _REDACT_BEARER = re.compile(r"Bearer \S+")
 _REDACT_SECRETS = re.compile(
     r"(password|secret|token|api_key)=[^\s&]+", re.IGNORECASE
 )
+# FR-64: OAuth-specific redaction — scoped to OAuth context
+_REDACT_OAUTH = re.compile(r"(code|state)=[^\s&]+")
 
 
 def _redact(msg: str) -> str:
     """Redact sensitive patterns from a log message."""
     msg = _REDACT_BEARER.sub("Bearer [REDACTED]", msg)
     msg = _REDACT_SECRETS.sub(r"\1=[REDACTED]", msg)
+    # FR-64: redact OAuth code/state only in OAuth-related contexts
+    if "/oauth/" in msg or "/callback" in msg:
+        msg = _REDACT_OAUTH.sub(r"\1=[REDACTED]", msg)
     return msg
 
 
@@ -141,7 +148,8 @@ def run(
     quiet: bool = typer.Option(False, "--quiet", help="Suppress INFO logging"),
 ) -> None:
     """Cross-post the oldest unprocessed Mastodon toot to configured platforms."""
-    load_dotenv()
+    env_path = Path(config).parent.resolve() / ".env"
+    load_dotenv(dotenv_path=env_path)
     if platform not in VALID_PLATFORMS:
         typer.echo(f"Invalid platform '{platform}'. Choose from: {', '.join(sorted(VALID_PLATFORMS))}", err=True)
         raise typer.Exit(code=2)
@@ -189,6 +197,9 @@ def run(
         # B1: lazy init — only call mastodon.me() when a first enabled platform is reached
         user_id: Optional[str] = None
 
+        # FR-60: LinkedIn refresh token expiry warning (7 days)
+        _check_linkedin_refresh_expiry(state_mgr, env_path)
+
         for plat in platforms_to_run:
             if plat not in cfg.platforms:
                 logger.warning(f"Platform '{plat}' not configured, skipping.")
@@ -218,7 +229,7 @@ def run(
 
             post = pipeline.enrich(post)
 
-            result = _dispatch_post(plat, post, plat_cfg, dry_run)
+            result = _dispatch_post(plat, post, plat_cfg, dry_run, state_mgr=state_mgr, env_path=env_path)
 
             # Retry on transient errors (429, 5xx)
             for attempt in range(2):
@@ -226,7 +237,7 @@ def run(
                     break
                 logger.info(f"[{plat}] Retrying ({attempt+1}/2) after transient error")
                 time.sleep(2 ** attempt)
-                result = _dispatch_post(plat, post, plat_cfg, dry_run)
+                result = _dispatch_post(plat, post, plat_cfg, dry_run, state_mgr=state_mgr, env_path=env_path)
 
             # FR-37: set last_posted_at on success; last_error on failure
             # Dry-run: adapter still returns POSTED but we do NOT persist state
@@ -277,7 +288,14 @@ def run(
         state_mgr.release_lock()
 
 
-def _dispatch_post(platform: str, post: UnifiedPost, plat_cfg: PlatformConfig, dry_run: bool) -> PostResult:
+def _dispatch_post(
+    platform: str,
+    post: UnifiedPost,
+    plat_cfg: PlatformConfig,
+    dry_run: bool,
+    state_mgr: Optional[StateManager] = None,
+    env_path: Optional[Path] = None,
+) -> PostResult:
     """Instantiate adapter and post. Validates credentials before API calls."""
     if platform == "bluesky":
         email = os.environ.get("BLUESKY_EMAIL")
@@ -288,7 +306,6 @@ def _dispatch_post(platform: str, post: UnifiedPost, plat_cfg: PlatformConfig, d
                 status=PostStatus.FAILED,
                 error="Missing BLUESKY_EMAIL or BLUESKY_PASSWORD env vars",
             )
-        # To add a new platform: add an elif branch here, and register in config.py
         from atproto import Client
         from scholarposter.adapters.bluesky import BlueskyAdapter
         client = Client()
@@ -299,6 +316,24 @@ def _dispatch_post(platform: str, post: UnifiedPost, plat_cfg: PlatformConfig, d
                               error=f"Bluesky login failed: {_redact(str(e))}")
         adapter = BlueskyAdapter(client=client, hashtag_rules=plat_cfg.hashtag_rules, media_config=plat_cfg.media)
     elif platform == "linkedin":
+        # FR-63: check auth state first (auth_expired takes precedence)
+        if state_mgr:
+            li_state = state_mgr.load_state().get("linkedin", {})
+            if li_state.get("auth_status") == "auth_expired" and li_state.get("refresh_failure_count", 0) >= 3:
+                return PostResult(platform=platform, status=PostStatus.SKIPPED,
+                    error="LinkedIn disabled (auth expired). Run: scholarposter auth linkedin")
+
+        # FR-63: check for refresh infrastructure (backward compat)
+        refresh_token = os.environ.get("LINKEDIN_REFRESH_TOKEN")
+        expires_at_str = os.environ.get("LINKEDIN_TOKEN_EXPIRES_AT")
+        if not refresh_token or not expires_at_str:
+            return PostResult(platform=platform, status=PostStatus.FAILED,
+                error="LinkedIn requires OAuth setup. Run `scholarposter auth linkedin` to authorize.")
+
+        # FR-59: auto-refresh if within 24h of expiry
+        if state_mgr and env_path:
+            _maybe_refresh_linkedin(env_path, state_mgr)
+
         token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
         owner = os.environ.get("LINKEDIN_OWNER_URN")
         if not token or not owner:
@@ -313,6 +348,111 @@ def _dispatch_post(platform: str, post: UnifiedPost, plat_cfg: PlatformConfig, d
         return PostResult(platform=platform, status=PostStatus.SKIPPED)
 
     return adapter.post(post, dry_run=dry_run)
+
+
+def _maybe_refresh_linkedin(env_path: Path, state_mgr: StateManager) -> None:
+    """Refresh LinkedIn token if within 24h of expiry. Updates .env and os.environ."""
+    from datetime import timedelta
+    from scholarposter.auth.oauth import OAuthHardError, OAuthTransientError, refresh_access_token
+    from scholarposter.env_writer import write_env
+
+    expires_at_str = os.environ.get("LINKEDIN_TOKEN_EXPIRES_AT", "")
+    if not expires_at_str:
+        return
+    try:
+        expires_at = datetime.fromisoformat(expires_at_str)
+    except ValueError:
+        logger.warning(f"Invalid LINKEDIN_TOKEN_EXPIRES_AT: {expires_at_str}")
+        return
+
+    if expires_at - datetime.now(timezone.utc) > timedelta(hours=24):
+        return  # not yet
+
+    try:
+        tokens = refresh_access_token(
+            os.environ["LINKEDIN_REFRESH_TOKEN"],
+            os.environ["LINKEDIN_CLIENT_ID"],
+            os.environ["LINKEDIN_CLIENT_SECRET"],
+        )
+        updates: dict[str, str] = {
+            "LINKEDIN_ACCESS_TOKEN": tokens["access_token"],
+            "LINKEDIN_TOKEN_EXPIRES_AT": (
+                datetime.now(timezone.utc) + timedelta(seconds=tokens["expires_in"])
+            ).isoformat(),
+        }
+        if "refresh_token" in tokens:
+            updates["LINKEDIN_REFRESH_TOKEN"] = tokens["refresh_token"]
+            updates["LINKEDIN_REFRESH_EXPIRES_AT"] = (
+                datetime.now(timezone.utc) + timedelta(seconds=tokens["refresh_token_expires_in"])
+            ).isoformat()
+        write_env(env_path, updates)
+        for key, value in updates.items():
+            os.environ[key] = value
+
+    except OAuthHardError as e:
+        li_state = state_mgr.load_state().get("linkedin", {})
+        count = li_state.get("refresh_failure_count", 0) + 1
+        state_mgr.update_platform_state("linkedin", PlatformState(
+            auth_status="auth_expired",
+            refresh_failure_count=count,
+        ))
+        logger.warning(f"LinkedIn token refresh failed (attempt {count}/3): {e}")
+        _send_refresh_notification(
+            env_path, f"LinkedIn token refresh failed (attempt {count}/3). "
+            "Run `scholarposter auth linkedin` to re-authorize."
+        )
+
+    except OAuthTransientError as e:
+        logger.warning(f"LinkedIn token refresh transient error: {e}")
+
+
+def _check_linkedin_refresh_expiry(state_mgr: StateManager, env_path: Path) -> None:
+    """FR-60: Warn 7 days before LinkedIn refresh token expiry."""
+    refresh_expires_str = os.environ.get("LINKEDIN_REFRESH_EXPIRES_AT")
+    if not refresh_expires_str:
+        return
+    try:
+        expires = datetime.fromisoformat(refresh_expires_str)
+    except ValueError:
+        return
+    days_left = (expires - datetime.now(timezone.utc)).days
+    if days_left > 7:
+        return
+
+    # Dedup: one warning per day (UTC)
+    today = datetime.now(timezone.utc).date()
+    li_state = state_mgr.load_state().get("linkedin", {})
+    last_warned = li_state.get("refresh_warning_last_sent")
+    if last_warned:
+        try:
+            if date.fromisoformat(last_warned) == today:
+                return
+        except (ValueError, TypeError):
+            pass
+
+    msg = f"LinkedIn refresh token expires on {expires.date()}. Run `scholarposter auth linkedin` to re-authorize."
+    logger.warning(msg)
+    _send_refresh_notification(env_path, msg)
+    state_mgr.update_platform_state("linkedin", PlatformState(
+        refresh_warning_last_sent=today,
+    ))
+
+
+def _send_refresh_notification(env_path: Path, message: str) -> None:
+    """Send a notification about LinkedIn token refresh issues."""
+    config_path = env_path.parent / "config.toml"
+    if not config_path.exists():
+        return
+    try:
+        cfg = load_config(config_path)
+        notifiers = _build_notifiers(cfg.notifications.backends)
+        for notifier in notifiers:
+            try:
+                notifier.notify("linkedin", "token-refresh", message)
+            except Exception as e:
+                logger.warning(f"Refresh notification failed: {e}")
+    except Exception as e:
+        logger.warning(f"Could not load config for notifications: {e}")
 
 
 @app.command()
@@ -361,13 +501,44 @@ def status(
         except Exception as e:
             logger.debug(f"Could not fetch pending counts: {e}")
 
+    # Load .env for token expiry display
+    env_path = config.parent.resolve() / ".env"
+    load_dotenv(dotenv_path=env_path)
+
     for plat, data in state.items():
         pending = pending_counts.get(plat, "?")
+
+        # FR-62: LinkedIn auth status display
+        if plat == "linkedin":
+            auth_st = data.get("auth_status", "normal")
+            if auth_st == "auth_expired":
+                typer.echo(f"{plat}: DISABLED (auth expired — run `scholarposter auth linkedin`)")
+                continue
+            expires_at = os.environ.get("LINKEDIN_TOKEN_EXPIRES_AT")
+            refresh_expires = os.environ.get("LINKEDIN_REFRESH_EXPIRES_AT")
+            extra = ""
+            if expires_at:
+                try:
+                    days = (datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).days
+                    extra = f", token_expires_in={days}d"
+                except ValueError:
+                    pass
+            if refresh_expires:
+                try:
+                    re_days = (datetime.fromisoformat(refresh_expires) - datetime.now(timezone.utc)).days
+                    if re_days <= 7:
+                        extra += f", WARNING: refresh token expires in {re_days}d"
+                except ValueError:
+                    pass
+
+        else:
+            extra = ""
+
         typer.echo(
             f"{plat}: last_toot_id={data.get('last_toot_id')}, "
             f"status={data.get('last_status')}, "
             f"pending={pending}, "
-            f"last_error={data.get('last_error')}"
+            f"last_error={data.get('last_error')}{extra}"
         )
 
 
@@ -381,7 +552,8 @@ def retry(
     quiet: bool = typer.Option(False, "--quiet", help="Suppress INFO logging"),
 ) -> None:
     """Retry posting a specific toot to a single platform."""
-    load_dotenv()
+    env_path = Path(config).parent.resolve() / ".env"
+    load_dotenv(dotenv_path=env_path)
     if platform not in {"bluesky", "linkedin"}:
         typer.echo(f"Invalid platform '{platform}'. Choose from: bluesky, linkedin", err=True)
         raise typer.Exit(code=2)
@@ -429,7 +601,7 @@ def retry(
         raw_toot = mastodon.status(toot_id)
         post = collector.toot_to_unified_post(raw_toot)
         post = pipeline.enrich(post)
-        result = _dispatch_post(platform, post, plat_cfg, dry_run)
+        result = _dispatch_post(platform, post, plat_cfg, dry_run, state_mgr=state_mgr, env_path=env_path)
 
         # FR-37: set last_posted_at on success; last_error on failure
         # Dry-run: adapter still returns POSTED but we do NOT persist state

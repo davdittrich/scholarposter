@@ -33,7 +33,7 @@ One section per platform (`bluesky`, `linkedin`).
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Upload images when present; set `false` to suppress media |
-| `max_image_size_kb` | `950` (Bluesky) / `5000` (LinkedIn) | Images are JPEG-resized to fit |
+| `max_image_size_kb` | `950` | Images are JPEG-resized to fit (example config suggests 5000 for LinkedIn) |
 
 ### `[[platforms.<name>.hashtag_rules]]`
 
@@ -190,7 +190,12 @@ scholarposter loads credentials from a `.env` file via python-dotenv. Store `.en
 |----------|----------|-------------|
 | `BLUESKY_EMAIL` | if Bluesky enabled | Bluesky account email |
 | `BLUESKY_PASSWORD` | if Bluesky enabled | Bluesky app password (see [auth-bluesky.md](auth-bluesky.md)) |
-| `LINKEDIN_ACCESS_TOKEN` | if LinkedIn enabled | LinkedIn OAuth2 access token (see [auth-linkedin.md](auth-linkedin.md)) |
-| `LINKEDIN_OWNER_URN` | if LinkedIn enabled | LinkedIn member URN (`urn:li:person:...`) |
+| `LINKEDIN_CLIENT_ID` | if LinkedIn enabled | LinkedIn app Client ID (from Developer Portal) |
+| `LINKEDIN_CLIENT_SECRET` | if LinkedIn enabled | LinkedIn app Client Secret |
+| `LINKEDIN_ACCESS_TOKEN` | managed by auth | LinkedIn OAuth access token (auto-managed) |
+| `LINKEDIN_OWNER_URN` | managed by auth | LinkedIn member URN, e.g. `urn:li:person:abc123` (auto-managed) |
+| `LINKEDIN_REFRESH_TOKEN` | managed by auth | LinkedIn OAuth refresh token (auto-managed) |
+| `LINKEDIN_TOKEN_EXPIRES_AT` | managed by auth | Access token expiry (ISO 8601, auto-managed) |
+| `LINKEDIN_REFRESH_EXPIRES_AT` | managed by auth | Refresh token expiry (ISO 8601, auto-managed) |
 | `SMTP_USER` | no | SMTP username for email notifications |
 | `SMTP_PASSWORD` | no | SMTP password for email notifications |

@@ -37,6 +37,7 @@ require_hashtags = []
 [platforms.linkedin.media]
 enabled = true
 max_image_size_kb = 5000
+# OAuth callback port: use --port flag with 'scholarposter auth linkedin' (default 8080)
 
 [enrichment.crossref]
 enabled = true

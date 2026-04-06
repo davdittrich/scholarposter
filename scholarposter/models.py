@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import grapheme
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, model_validator
@@ -172,6 +172,9 @@ class PlatformState(BaseModel):
     last_status: Optional[str] = None
     last_posted_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    auth_status: str = "normal"
+    refresh_failure_count: int = 0
+    refresh_warning_last_sent: Optional[date] = None
 
 
 class BibliographyEntry(BaseModel):

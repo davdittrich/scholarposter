@@ -207,9 +207,9 @@ a structured JSON-RPC 2.0 interface over stdio, provided by the
 Install the Gemini CLI and authenticate:
 
 ```bash
-# Gemini CLI (requires 0.34.0+)
-pip install google-generativeai
-# or follow https://ai.google.dev/gemini-api/docs/downloads
+# Install the Gemini CLI binary (requires 0.36.0+):
+# https://ai.google.dev/gemini-api/docs/downloads
+# Verify: gemini --version
 
 # The ACP client library is installed automatically with scholarposter
 ```

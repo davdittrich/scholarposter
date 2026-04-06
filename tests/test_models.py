@@ -327,6 +327,15 @@ class TestPlatformState:
         assert state.last_toot_id == 113456789012345678
         assert state.last_status == "posted"
 
+    def test_auth_status_default(self):
+        ps = PlatformState()
+        assert ps.auth_status == "normal"
+
+    def test_refresh_fields_defaults(self):
+        ps = PlatformState()
+        assert ps.refresh_failure_count == 0
+        assert ps.refresh_warning_last_sent is None
+
 
 class TestIsMediaOnly:
     def _make_post(self, text="", media=None):

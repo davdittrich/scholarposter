@@ -2,7 +2,7 @@
 
 ## Global Flags
 
-All commands accept these flags:
+The `run`, `status`, and `retry` commands accept these flags:
 
 | Flag | Effect |
 |------|--------|
@@ -62,6 +62,17 @@ scholarposter status
 
 Queries the Mastodon API for pending toot count (up to 50). Pending shows `?` if
 the API is unreachable.
+
+### `scholarposter auth linkedin`
+
+Authorize scholarposter to post to LinkedIn via OAuth 2.0.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--config` | `config.toml` | Path to config file (`.env` is resolved from the same directory) |
+| `--port` | `8080` | Local port for the OAuth callback server |
+
+Requires `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` in `.env`. See [auth-linkedin.md](auth-linkedin.md) for setup.
 
 ### `config validate`
 
@@ -127,7 +138,7 @@ The `--json` flag outputs all enrichment fields including:
 - `link_type` — `"file"` or `"webpage"` (based on Content-Type or URL extension)
 - `crossref_title`, `crossref_abstract` — Crossref-specific metadata (separate from OG)
 - `card_description`, `card_title` — resolved card text after three-tiered priority and sanitization
-- `enrichment_rank` — link quality score (4=DOI, 3=file, 2=OG-described, 1=bare)
+- `enrichment_rank` — link quality score (4=DOI, 3=file, 2=has title or description, 1=bare)
 
 Human-readable output shows Title, DOI, Abstract (truncated to 200 chars), Resolved URL, and Summary.
 
