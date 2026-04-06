@@ -26,7 +26,11 @@ auth_app = typer.Typer(help="Authentication management.")
 
 SETUP_INSTRUCTIONS = """LinkedIn OAuth setup required. Follow these steps:
 1. Create an app at https://www.linkedin.com/developers/apps
-2. Request access to "Community Management API" and "Sign In with LinkedIn using OpenID Connect"
+   (or reuse an existing app)
+2. On the Products tab, enable:
+   - "Share on LinkedIn" (for posting)
+   - "Sign In with LinkedIn using OpenID Connect" (for refresh tokens)
+   Note: "Community Management API" also works for posting if available.
 3. On the Auth tab, add this redirect URI: http://localhost:8080/callback
 4. Copy your Client ID and Client Secret, then add to .env:
    LINKEDIN_CLIENT_ID=your-client-id

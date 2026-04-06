@@ -141,7 +141,9 @@ Next steps:
        (Create app password at bsky.app → Settings → App Passwords)
 
   3. Set up LinkedIn:
-       scholarposter auth linkedin --config $DEST_DIR/config.toml
+       a. Edit $DEST_DIR/.env — fill in LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET
+          (see docs/auth-linkedin.md for LinkedIn Developer app setup)
+       b. scholarposter auth linkedin --config $DEST_DIR/config.toml
 
   4. (Optional) Set up summarization — see docs/summarization.md
 
