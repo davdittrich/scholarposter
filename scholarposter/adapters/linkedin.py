@@ -13,7 +13,7 @@ from scholarposter.enrichment.media import download_media
 from scholarposter.models import PostResult, PostStatus, UnifiedPost
 
 _API_BASE = "https://api.linkedin.com"
-_LI_VERSION = "202411"
+_LI_VERSION = "202603"
 _LI_MAX_CHARS = 3000
 
 
