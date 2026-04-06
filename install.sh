@@ -65,9 +65,44 @@ ln -sf "$VENV/bin/scholarposter" "$SYMLINK_DIR/scholarposter"
 echo "  Symlinked scholarposter → $SYMLINK_DIR/scholarposter"
 
 if [[ ":$PATH:" != *":$SYMLINK_DIR:"* ]]; then
-    echo "  ⚠  $SYMLINK_DIR is not on your PATH."
-    echo "     Add this to ~/.bashrc (or ~/.zshrc):"
-    echo "       export PATH=\"\$HOME/.local/bin:\$PATH\""
+    # Detect shell rc file and appropriate syntax
+    SHELL_RC=""
+    EXPORT_LINE=""
+    case "$(basename "${SHELL:-bash}")" in
+        zsh)
+            SHELL_RC="$HOME/.zshrc"
+            EXPORT_LINE='export PATH="$HOME/.local/bin:$PATH"'
+            ;;
+        bash)
+            SHELL_RC="$HOME/.bashrc"
+            EXPORT_LINE='export PATH="$HOME/.local/bin:$PATH"'
+            ;;
+        fish)
+            SHELL_RC="$HOME/.config/fish/config.fish"
+            EXPORT_LINE='set -gx PATH $HOME/.local/bin $PATH'
+            ;;
+        *)
+            echo "  ⚠  Unknown shell '${SHELL:-}'. Add ~/.local/bin to your PATH manually:"
+            echo "       export PATH=\"\$HOME/.local/bin:\$PATH\""
+            ;;
+    esac
+
+    if [[ -n "$SHELL_RC" ]]; then
+        if [[ ! -f "$SHELL_RC" ]]; then
+            # Create parent dir + rc file if missing (e.g., fresh fish: ~/.config/fish/ may not exist)
+            mkdir -p "$(dirname "$SHELL_RC")"
+            touch "$SHELL_RC"
+        fi
+        if ! grep -qF '.local/bin' "$SHELL_RC"; then
+            echo "" >> "$SHELL_RC"
+            echo "# Added by scholarposter installer" >> "$SHELL_RC"
+            echo "$EXPORT_LINE" >> "$SHELL_RC"
+            echo "  Added ~/.local/bin to PATH in $SHELL_RC"
+        fi
+    fi
+
+    export PATH="$SYMLINK_DIR:$PATH"
+    echo "  Open a new terminal for PATH changes to take effect."
 fi
 
 # ── Scaffold config files (never overwrite) ────────────────────────────────────
