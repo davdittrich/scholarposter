@@ -68,6 +68,14 @@ Verify:
 ~/scholarposter/.venv/bin/scholarposter --help
 ```
 
+The install script symlinks `scholarposter` to `~/.local/bin/`, which is on PATH
+by default on most Linux distributions. If `scholarposter` is still not found after
+install, add `~/.local/bin` to your PATH:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"  # add to ~/.bashrc or ~/.zshrc
+```
+
 ### Post-install setup
 
 - [ ] **Mastodon credentials** — run `scholarposter auth mastodon` (see [docs/auth-mastodon.md](docs/auth-mastodon.md))

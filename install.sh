@@ -58,6 +58,18 @@ fi
 echo "  Installing dependencies (this may take a minute)..."
 "$VENV/bin/pip" install --upgrade --quiet -e "$DEST_DIR"
 
+# ── Make command available on PATH ────────────────────────────────────────────
+SYMLINK_DIR="$HOME/.local/bin"
+mkdir -p "$SYMLINK_DIR"
+ln -sf "$VENV/bin/scholarposter" "$SYMLINK_DIR/scholarposter"
+echo "  Symlinked scholarposter → $SYMLINK_DIR/scholarposter"
+
+if [[ ":$PATH:" != *":$SYMLINK_DIR:"* ]]; then
+    echo "  ⚠  $SYMLINK_DIR is not on your PATH."
+    echo "     Add this to ~/.bashrc (or ~/.zshrc):"
+    echo "       export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
 # ── Scaffold config files (never overwrite) ────────────────────────────────────
 if [[ ! -f "$DEST_DIR/config.toml" ]]; then
     cp "$DEST_DIR/config.toml.example" "$DEST_DIR/config.toml"
@@ -82,29 +94,27 @@ find "$DEST_DIR" -maxdepth 1 -name "*.secret" -exec chmod 600 {} \;
 cat <<EOF
 
 ✔  Installed to $DEST_DIR
+   Command: scholarposter (symlinked to $SYMLINK_DIR/scholarposter)
 
 Next steps:
-  1. Authenticate with Mastodon:
-       See docs/auth-mastodon.md
-       Place pytooter_usercred.secret in $DEST_DIR
+  1. Set up Mastodon:
+       scholarposter auth mastodon --config $DEST_DIR/config.toml
 
-  2. Edit $DEST_DIR/config.toml
-       Set [mastodon] instance and credentials_file path
+  2. Set up Bluesky (in $DEST_DIR/.env):
+       BLUESKY_EMAIL=your@email.com
+       BLUESKY_PASSWORD=xxxx-xxxx-xxxx-xxxx
+       (Create app password at bsky.app → Settings → App Passwords)
 
-  3. Fill in $DEST_DIR/.env
-       Bluesky: BLUESKY_EMAIL and BLUESKY_PASSWORD (App Password)
-       LinkedIn: see docs/auth-linkedin.md
+  3. Set up LinkedIn:
+       scholarposter auth linkedin --config $DEST_DIR/config.toml
 
-  4. (Optional) Set up summarization:
-       Lemonade (local LLM, recommended):  lemonade status && lemonade pull Phi-4-mini-instruct-GGUF
-       Gemini CLI (cloud):                 $VENV/bin/pip install scholarposter[gemini] && gemini auth login
-       See docs/summarization.md for details.
+  4. (Optional) Set up summarization — see docs/summarization.md
 
   5. Test:
-       $VENV/bin/scholarposter run --config $DEST_DIR/config.toml --dry-run
+       scholarposter run --config $DEST_DIR/config.toml --dry-run
 
   6. Add to cron (crontab -e):
-       */30 * * * * $VENV/bin/scholarposter run --config $DEST_DIR/config.toml >> $DEST_DIR/scholarposter.log 2>&1
+       */30 * * * * $SYMLINK_DIR/scholarposter run --config $DEST_DIR/config.toml >> $DEST_DIR/scholarposter.log 2>&1
 
 To upgrade: re-run this script with the same DEST_DIR.
 EOF
