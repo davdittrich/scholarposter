@@ -195,8 +195,6 @@ scholarposter loads credentials from a `.env` file via python-dotenv. Store `.en
 | `LINKEDIN_CLIENT_SECRET` | if LinkedIn enabled | LinkedIn app Client Secret |
 | `LINKEDIN_ACCESS_TOKEN` | managed by auth | LinkedIn OAuth access token (auto-managed) |
 | `LINKEDIN_OWNER_URN` | managed by auth | LinkedIn member URN, e.g. `urn:li:person:abc123` (auto-managed) |
-| `LINKEDIN_REFRESH_TOKEN` | managed by auth | LinkedIn OAuth refresh token (auto-managed) |
 | `LINKEDIN_TOKEN_EXPIRES_AT` | managed by auth | Access token expiry (ISO 8601, auto-managed) |
-| `LINKEDIN_REFRESH_EXPIRES_AT` | managed by auth | Refresh token expiry (ISO 8601, auto-managed) |
 | `SMTP_USER` | no | SMTP username for email notifications |
 | `SMTP_PASSWORD` | no | SMTP password for email notifications |

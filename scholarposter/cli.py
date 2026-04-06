@@ -195,7 +195,7 @@ def run(
         user_id: Optional[str] = None
 
         # FR-60: LinkedIn refresh token expiry warning (7 days)
-        _check_linkedin_refresh_expiry(state_mgr, env_path)
+        _check_linkedin_token_expiry(state_mgr, env_path)
 
         for plat in platforms_to_run:
             if plat not in cfg.platforms:
@@ -342,23 +342,12 @@ def _dispatch_post(
                               error=f"Bluesky login failed: {_redact(str(e))}")
         adapter = BlueskyAdapter(client=client, hashtag_rules=plat_cfg.hashtag_rules, media_config=plat_cfg.media)
     elif platform == "linkedin":
-        # FR-63: check auth state first (auth_expired takes precedence)
+        # FR-63: check auth state (expired token)
         if state_mgr:
             li_state = state_mgr.load_state().get("linkedin", {})
-            if li_state.get("auth_status") == "auth_expired" and li_state.get("refresh_failure_count", 0) >= 3:
+            if li_state.get("auth_status") == "auth_expired":
                 return PostResult(platform=platform, status=PostStatus.SKIPPED,
-                    error="LinkedIn disabled (auth expired). Run: scholarposter auth linkedin")
-
-        # FR-63: check for refresh infrastructure (backward compat)
-        refresh_token = os.environ.get("LINKEDIN_REFRESH_TOKEN")
-        expires_at_str = os.environ.get("LINKEDIN_TOKEN_EXPIRES_AT")
-        if not refresh_token or not expires_at_str:
-            return PostResult(platform=platform, status=PostStatus.FAILED,
-                error="LinkedIn requires OAuth setup. Run `scholarposter auth linkedin` to authorize.")
-
-        # FR-59: auto-refresh if within 24h of expiry
-        if state_mgr and env_path:
-            _maybe_refresh_linkedin(env_path, state_mgr)
+                    error="LinkedIn token expired. Run: scholarposter auth linkedin")
 
         token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
         owner = os.environ.get("LINKEDIN_OWNER_URN")
@@ -376,69 +365,13 @@ def _dispatch_post(
     return adapter.post(post, dry_run=dry_run)
 
 
-def _maybe_refresh_linkedin(env_path: Path, state_mgr: StateManager) -> None:
-    """Refresh LinkedIn token if within 24h of expiry. Updates .env and os.environ."""
-    from datetime import timedelta
-    from scholarposter.auth.oauth import OAuthHardError, OAuthTransientError, refresh_access_token
-    from scholarposter.env_writer import write_env
-
-    expires_at_str = os.environ.get("LINKEDIN_TOKEN_EXPIRES_AT", "")
-    if not expires_at_str:
+def _check_linkedin_token_expiry(state_mgr: StateManager, env_path: Path) -> None:
+    """FR-60: Warn 7 days before LinkedIn access token expiry."""
+    expires_str = os.environ.get("LINKEDIN_TOKEN_EXPIRES_AT")
+    if not expires_str:
         return
     try:
-        expires_at = datetime.fromisoformat(expires_at_str)
-    except ValueError:
-        logger.warning(f"Invalid LINKEDIN_TOKEN_EXPIRES_AT: {expires_at_str}")
-        return
-
-    if expires_at - datetime.now(timezone.utc) > timedelta(hours=24):
-        return  # not yet
-
-    try:
-        tokens = refresh_access_token(
-            os.environ["LINKEDIN_REFRESH_TOKEN"],
-            os.environ["LINKEDIN_CLIENT_ID"],
-            os.environ["LINKEDIN_CLIENT_SECRET"],
-        )
-        updates: dict[str, str] = {
-            "LINKEDIN_ACCESS_TOKEN": tokens["access_token"],
-            "LINKEDIN_TOKEN_EXPIRES_AT": (
-                datetime.now(timezone.utc) + timedelta(seconds=tokens["expires_in"])
-            ).isoformat(),
-        }
-        if "refresh_token" in tokens:
-            updates["LINKEDIN_REFRESH_TOKEN"] = tokens["refresh_token"]
-            updates["LINKEDIN_REFRESH_EXPIRES_AT"] = (
-                datetime.now(timezone.utc) + timedelta(seconds=tokens["refresh_token_expires_in"])
-            ).isoformat()
-        write_env(env_path, updates)
-        for key, value in updates.items():
-            os.environ[key] = value
-
-    except OAuthHardError as e:
-        li_state = state_mgr.load_state().get("linkedin", {})
-        count = li_state.get("refresh_failure_count", 0) + 1
-        state_mgr.update_platform_state("linkedin", PlatformState(
-            auth_status="auth_expired",
-            refresh_failure_count=count,
-        ))
-        logger.warning(f"LinkedIn token refresh failed (attempt {count}/3): {e}")
-        _send_refresh_notification(
-            env_path, f"LinkedIn token refresh failed (attempt {count}/3). "
-            "Run `scholarposter auth linkedin` to re-authorize."
-        )
-
-    except OAuthTransientError as e:
-        logger.warning(f"LinkedIn token refresh transient error: {e}")
-
-
-def _check_linkedin_refresh_expiry(state_mgr: StateManager, env_path: Path) -> None:
-    """FR-60: Warn 7 days before LinkedIn refresh token expiry."""
-    refresh_expires_str = os.environ.get("LINKEDIN_REFRESH_EXPIRES_AT")
-    if not refresh_expires_str:
-        return
-    try:
-        expires = datetime.fromisoformat(refresh_expires_str)
+        expires = datetime.fromisoformat(expires_str)
     except ValueError:
         return
     days_left = (expires - datetime.now(timezone.utc)).days
@@ -456,7 +389,7 @@ def _check_linkedin_refresh_expiry(state_mgr: StateManager, env_path: Path) -> N
         except (ValueError, TypeError):
             pass
 
-    msg = f"LinkedIn refresh token expires on {expires.date()}. Run `scholarposter auth linkedin` to re-authorize."
+    msg = f"LinkedIn token expires on {expires.date()}. Run `scholarposter auth linkedin` to re-authorize."
     logger.warning(msg)
     _send_refresh_notification(env_path, msg)
     state_mgr.update_platform_state("linkedin", PlatformState(
@@ -535,22 +468,16 @@ def status(
         if plat == "linkedin":
             auth_st = data.get("auth_status", "normal")
             if auth_st == "auth_expired":
-                typer.echo(f"{plat}: DISABLED (auth expired — run `scholarposter auth linkedin`)")
+                typer.echo(f"{plat}: token expired — run `scholarposter auth linkedin`")
                 continue
             expires_at = os.environ.get("LINKEDIN_TOKEN_EXPIRES_AT")
-            refresh_expires = os.environ.get("LINKEDIN_REFRESH_EXPIRES_AT")
             extra = ""
             if expires_at:
                 try:
                     days = (datetime.fromisoformat(expires_at) - datetime.now(timezone.utc)).days
                     extra = f", token_expires_in={days}d"
-                except ValueError:
-                    pass
-            if refresh_expires:
-                try:
-                    re_days = (datetime.fromisoformat(refresh_expires) - datetime.now(timezone.utc)).days
-                    if re_days <= 7:
-                        extra += f", WARNING: refresh token expires in {re_days}d"
+                    if days <= 7:
+                        extra += " (WARNING: expiring soon)"
                 except ValueError:
                     pass
 

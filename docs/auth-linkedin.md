@@ -52,10 +52,10 @@ On headless servers (no display), the command prints the authorization URL and p
 
 | Token | Lifetime | Management |
 |-------|----------|------------|
-| Access token | 60 days | Auto-refreshed before each post when within 24 hours of expiry |
-| Refresh token | 365 days | scholarposter warns 7 days before expiry via configured notifications |
+| Access token | 60 days | scholarposter warns 7 days before expiry via notifications |
 
-After the refresh token expires, re-run `scholarposter auth linkedin`.
+No auto-refresh — LinkedIn restricts refresh tokens to partner programs. When the
+token expires, re-run `scholarposter auth linkedin`.
 
 ---
 
@@ -64,7 +64,7 @@ After the refresh token expires, re-run `scholarposter auth linkedin`.
 | Symptom | Fix |
 |---------|-----|
 | `LinkedIn requires OAuth setup` | Run `scholarposter auth linkedin` |
-| `LinkedIn: DISABLED (auth expired)` | Refresh token revoked or 3+ refresh failures. Re-run `scholarposter auth linkedin` |
+| `LinkedIn: token expired` | Access token expired (60-day lifetime). Re-run `scholarposter auth linkedin` |
 | `Port 8080 is in use` | Use `--port 9090` (update redirect URI in LinkedIn app to match) |
 | `LinkedIn did not return a refresh token` | Enable "Sign In with LinkedIn using OpenID Connect" on your app's Products tab |
 

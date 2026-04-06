@@ -71,7 +71,7 @@ def linkedin(
         "https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code&client_id={client_id}"
         f"&redirect_uri={urllib.parse.quote(redirect_uri, safe='')}"
-        "&scope=openid%20profile%20w_member_social%20offline_access"
+        "&scope=openid%20profile%20w_member_social"
         f"&state={state}"
     )
 
@@ -86,7 +86,6 @@ def linkedin(
 
         # FR-56: exchange code
         tokens = exchange_code(code, redirect_uri, client_id, client_secret)
-        typer.echo(f"Authorization successful. Token expires {_expiry_date(tokens['expires_in'])}.")
 
         # FR-57: fetch URN
         urn = fetch_member_urn(tokens["access_token"])
@@ -94,10 +93,8 @@ def linkedin(
         # FR-58: write to .env
         write_env(env_path, {
             "LINKEDIN_ACCESS_TOKEN": tokens["access_token"],
-            "LINKEDIN_REFRESH_TOKEN": tokens["refresh_token"],
             "LINKEDIN_OWNER_URN": urn,
             "LINKEDIN_TOKEN_EXPIRES_AT": _expiry_iso(tokens["expires_in"]),
-            "LINKEDIN_REFRESH_EXPIRES_AT": _expiry_iso(tokens["refresh_token_expires_in"]),
         })
 
         # FR-61: reset auth state on successful re-auth
@@ -105,11 +102,10 @@ def linkedin(
         with state_mgr.lock():
             state_mgr.update_platform_state("linkedin", PlatformState(
                 auth_status="normal",
-                refresh_failure_count=0,
                 refresh_warning_last_sent=None,
             ))
 
-        typer.echo("Credentials saved to .env. LinkedIn is now authorized.")
+        typer.echo(f"LinkedIn authorized. Token expires {_expiry_date(tokens['expires_in'])}. Credentials saved to .env.")
 
     except OAuthError as e:
         typer.echo(f"Error: {e.message}", err=True)
