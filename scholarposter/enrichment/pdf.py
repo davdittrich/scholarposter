@@ -23,12 +23,18 @@ def extract_pdf_metadata(pdf_bytes: bytes) -> dict:
     meta = doc.metadata or {}
     result: dict = {}
 
-    title = meta.get("title", "").strip()
+    raw_title = meta.get("title")
+    if isinstance(raw_title, list):
+        raw_title = raw_title[0] if raw_title else None
+    title = (raw_title or "").strip()
     if title:
         result["title"] = title
 
     # subject field maps to Dublin Core description
-    subject = meta.get("subject", "").strip()
+    raw_subject = meta.get("subject")
+    if isinstance(raw_subject, list):
+        raw_subject = raw_subject[0] if raw_subject else None
+    subject = (raw_subject or "").strip()
     if subject:
         result["description"] = subject
 

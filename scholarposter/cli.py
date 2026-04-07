@@ -55,10 +55,10 @@ def _redact_filter(record: dict[str, Any]) -> bool:
 def setup_logging(level: str = "INFO", log_file: Optional[str] = None,
                   rotation: str = "10 MB", retention: str = "30 days") -> None:
     logger.remove()
-    logger.add(sys.stderr, level=level, filter=_redact_filter)
+    logger.add(sys.stderr, level=level, filter=_redact_filter)  # type: ignore[arg-type]
     if log_file:
         logger.add(log_file, level=level, rotation=rotation, retention=retention,
-                   filter=_redact_filter)
+                   filter=_redact_filter)  # type: ignore[arg-type]
 
 
 def _load_config_and_state(config: Path) -> tuple[StateManager, Optional[Any]]:
@@ -298,7 +298,7 @@ def _build_mastodon_client(
         mastodon_client.account_verify_credentials()
         return mastodon_client
     except MastodonAPIError as e:
-        if hasattr(e, "response") and getattr(e.response, "status_code", None) == 401:
+        if getattr(getattr(e, "response", None), "status_code", None) == 401:
             logger.error("Mastodon token revoked. Run `scholarposter auth mastodon` to re-authorize.")
             if env_path:
                 _send_refresh_notification(

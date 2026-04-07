@@ -72,3 +72,43 @@ class TestExtractPdfText:
         """Passing max_pages extracts at most that many pages."""
         result = extract_pdf_text(pdf_bytes, max_pages=1)
         assert result is not None
+
+
+class TestExtractPdfMetadataRobustness:
+    """Tests for non-string metadata values (PyMuPDF can return list or None)."""
+
+    def test_list_title_returns_first_element(self) -> None:
+        """When metadata title is a list, return its first element as a string."""
+        from unittest.mock import MagicMock, patch
+        mock_doc = MagicMock()
+        mock_doc.metadata = {"title": ["My Title"], "subject": ""}
+        with patch("scholarposter.enrichment.pdf.fitz.open", return_value=mock_doc):
+            result = extract_pdf_metadata(b"fake")
+        assert result.get("title") == "My Title"
+
+    def test_none_title_omitted(self) -> None:
+        """When metadata title is None, the key must not appear in the result."""
+        from unittest.mock import MagicMock, patch
+        mock_doc = MagicMock()
+        mock_doc.metadata = {"title": None, "subject": ""}
+        with patch("scholarposter.enrichment.pdf.fitz.open", return_value=mock_doc):
+            result = extract_pdf_metadata(b"fake")
+        assert "title" not in result
+
+    def test_empty_list_title_omitted(self) -> None:
+        """When metadata title is an empty list, the key must not appear."""
+        from unittest.mock import MagicMock, patch
+        mock_doc = MagicMock()
+        mock_doc.metadata = {"title": [], "subject": ""}
+        with patch("scholarposter.enrichment.pdf.fitz.open", return_value=mock_doc):
+            result = extract_pdf_metadata(b"fake")
+        assert "title" not in result
+
+    def test_list_title_str_not_bracket_repr(self) -> None:
+        """str(list) must NOT be used — result must not contain bracket syntax."""
+        from unittest.mock import MagicMock, patch
+        mock_doc = MagicMock()
+        mock_doc.metadata = {"title": ["Bracketed Title"], "subject": ""}
+        with patch("scholarposter.enrichment.pdf.fitz.open", return_value=mock_doc):
+            result = extract_pdf_metadata(b"fake")
+        assert "[" not in result.get("title", "")

@@ -27,7 +27,7 @@ def resize_image(
         img = img.convert("RGB")
 
     # Resize to fit within max_dims while preserving aspect ratio
-    img.thumbnail(max_dims, Image.LANCZOS)
+    img.thumbnail(max_dims, Image.Resampling.LANCZOS)
 
     max_bytes = max_size_kb * 1024
     quality = 85

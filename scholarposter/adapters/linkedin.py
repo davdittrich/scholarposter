@@ -146,7 +146,7 @@ class LinkedInAdapter(BaseAdapter):
                 }
             }
         elif post.links:
-            link = max(post.links, key=lambda l: l.enrichment_rank)
+            link = max(post.links, key=lambda item: item.enrichment_rank)
             url = link.resolved_url or link.original_url
             article: dict[str, Any] = {"source": url}
             card_title = link.card_title

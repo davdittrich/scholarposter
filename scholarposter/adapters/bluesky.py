@@ -47,7 +47,7 @@ def _select_best_link(links, chunk_text=None, promoted=None):
         return candidates[0][0]
     if promoted:
         return promoted
-    return max(links, key=lambda l: l.enrichment_rank)
+    return max(links, key=lambda link: link.enrichment_rank)
 
 
 def parse_mentions(text: str) -> list[dict[str, Any]]:
@@ -204,7 +204,7 @@ class BlueskyAdapter(BaseAdapter):
         # Determine post-level best link for promotion rule
         post_best_link = None
         if unified_post.links:
-            post_best_link = max(unified_post.links, key=lambda l: l.enrichment_rank)
+            post_best_link = max(unified_post.links, key=lambda link: link.enrichment_rank)
 
         root_ref: Optional[Any] = None
         parent_ref: Optional[Any] = None
