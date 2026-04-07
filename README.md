@@ -137,16 +137,22 @@ Prints title, DOI, abstract, resolved URL, and summary.
 
 ### Discovering new papers
 
-Suggest recent papers by authors you frequently share:
+Traverse the OpenAlex citation graph using your bibliography as seed DOIs:
 
 ```bash
-scholarposter discover                    # last 30 days, top 10
-scholarposter discover --days 7 --limit 5
-scholarposter discover --json
+scholarposter discover                          # all modes from config
+scholarposter discover --mode cited-by          # papers that cite your work
+scholarposter discover --mode cites             # papers your work references
+scholarposter discover --mode all               # cited-by + cites combined
+scholarposter discover --since 2025-01-01       # papers from 2025 onwards
+scholarposter discover --limit 20               # top 20 suggestions
+scholarposter discover --json                   # JSON output
+scholarposter discover --wide                   # full-length titles
 ```
 
-Queries OpenAlex based on your bibliography's author frequency. Excludes papers
-you've already shared.
+Requires `[discovery] enabled = true` in config.  Uses OpenAlex polite pool
+(set `etiquette_email` in `[enrichment.crossref]`).  Excludes papers already
+in your bibliography.
 
 ### Querying the audit log
 
@@ -284,7 +290,10 @@ scholarposter/
 ├── filters.py              # Hashtag/content-type filtering, hashtag rules
 ├── gemini_client.py        # Thin re-export from gemini-acp package
 ├── bibliography.py         # BibTeX and Markdown export formatting
-├── discovery.py            # OpenAlex paper discovery
+├── discovery/              # OpenAlex citation graph discovery
+│   ├── __init__.py         #   CandidatePaper dataclass
+│   ├── graph.py            #   cited_by / cites traversal (httpx sync)
+│   └── cache.py            #   atomic TTL cache (discovery_cache.json)
 ├── migration.py            # Legacy lasttoot*.txt → state.json migration
 ├── env_writer.py           # Atomic .env read/write with 0600 permissions
 ├── auth/

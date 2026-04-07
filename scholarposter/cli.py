@@ -734,49 +734,135 @@ def enrich(
             typer.echo("No structured metadata found.")
 
 
+_DISCOVER_MODES = {"cited-by", "cites", "co-cited", "all"}
+_TITLE_WIDTH = 40  # truncate at 40 chars for 120-col table
+
+
 @app.command()
 def discover(
     config: Path = typer.Option(Path("config.toml"), "--config"),
-    days: int = typer.Option(30, help="Look back N days"),
-    limit: int = typer.Option(10, help="Max suggestions"),
+    mode: Optional[str] = typer.Option(None, "--mode",
+        help="Discovery mode: cited-by | cites | co-cited | all (default: config modes)"),
+    since: Optional[str] = typer.Option(None, "--since",
+        help="Only show papers from YYYY-MM-DD onwards"),
+    days: Optional[int] = typer.Option(None, "--days",
+        help="[Deprecated] Look back N days — use --since instead"),
+    limit: int = typer.Option(10, "--limit", help="Max suggestions"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    wide: bool = typer.Option(False, "--wide", help="Don't truncate titles"),
 ) -> None:
-    """Discover recent papers matching your sharing interests."""
+    """Discover related papers via OpenAlex citation graph (US-014)."""
+    import json as json_mod
+
+    from scholarposter.discovery.graph import cited_by as _cited_by, cites as _cites
+
     state_mgr, cfg = _load_config_and_state(config)
     email = cfg.enrichment.crossref.etiquette_email if cfg else ""
+    disc_cfg = cfg.discovery if cfg else None
+
+    # --days deprecation
+    if days is not None:
+        typer.echo("Warning: --days is deprecated. Use --since.", err=True)
+        if since is None:
+            from datetime import timedelta
+            since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # Resolve modes
+    resolved_modes: list[str]
+    if mode is None:
+        resolved_modes = (disc_cfg.modes if disc_cfg else ["cited-by", "cites"])
+    elif mode not in _DISCOVER_MODES:
+        typer.echo(f"Unknown --mode '{mode}'. Choose from: {', '.join(sorted(_DISCOVER_MODES))}",
+                   err=True)
+        raise typer.Exit(code=1)
+    elif mode == "co-cited":
+        typer.echo("co-cited is not yet implemented (Phase 6).")
+        return
+    elif mode == "all":
+        resolved_modes = ["cited-by", "cites"]
+        logger.info("co-cited skipped: Phase 6 not yet implemented")
+    else:
+        resolved_modes = [mode]
 
     bib = state_mgr.load_bibliography()
     if not bib:
-        typer.echo("No bibliography found. Share papers first with `scholarposter run`.", err=True)
+        typer.echo("No bibliography found. Share papers first with `scholarposter run`.",
+                   err=True)
         raise typer.Exit(code=1)
 
-    from scholarposter.discovery import extract_interests, discover_papers
-    interests = extract_interests(bib)
-    if not interests["top_authors"]:
-        typer.echo("Not enough data. Share more papers with DOIs.", err=True)
-        raise typer.Exit(code=1)
+    seed_dois = [e["doi"] for e in bib if e.get("doi")]
+    bib_doi_set = set(seed_dois)
 
-    if len(interests["top_authors"]) < 3:
-        typer.echo("Note: few authors in bibliography — results may be limited.\n", err=True)
+    # Parse since year for filtering
+    since_year: Optional[int] = None
+    if since:
+        try:
+            since_year = int(since[:4])
+        except (ValueError, IndexError):
+            typer.echo(f"Invalid --since date: {since}", err=True)
+            raise typer.Exit(code=2)
 
-    papers = discover_papers(interests, etiquette_email=email, max_results=limit, days=days)
-    if not papers:
+    import httpx as _httpx
+    from scholarposter.config import DiscoveryConfig as _DiscoveryConfig
+    from scholarposter.discovery.cache import DiscoveryCache as _DiscoveryCache
+    effective_cfg = disc_cfg if disc_cfg is not None else _DiscoveryConfig(limit=limit)
+    client = _httpx.Client(timeout=10.0)
+
+    # Wire cache — resolved relative to the config file's parent directory
+    disc_cache: Optional[_DiscoveryCache] = None
+    if effective_cfg.cache_ttl_hours > 0:
+        cache_path = config.parent.resolve() / "discovery_cache.json"
+        disc_cache = _DiscoveryCache(cache_path)
+
+    results = []
+    try:
+        for m in resolved_modes:
+            if m == "cited-by":
+                results.extend(_cited_by(seed_dois, effective_cfg, email, client,
+                                         bibliography_dois=bib_doi_set,
+                                         cache=disc_cache))
+            elif m == "cites":
+                results.extend(_cites(seed_dois, effective_cfg, email, client,
+                                      bibliography_dois=bib_doi_set,
+                                      cache=disc_cache))
+    finally:
+        client.close()
+
+    # Filter by since_year
+    if since_year:
+        results = [p for p in results if p.year is None or p.year >= since_year]
+
+    # Deduplicate (across modes)
+    seen: dict[str, object] = {}
+    unique = []
+    for p in results:
+        if p.doi not in seen:
+            seen[p.doi] = None
+            unique.append(p)
+
+    unique = unique[:limit]
+
+    if not unique:
         typer.echo("No new papers found matching your interests.")
         return
 
     if json_output:
-        import json as json_mod
-        typer.echo(json_mod.dumps(papers, indent=2))
-    else:
-        typer.echo(f"Paper Discovery — {len(papers)} suggestions\n")
-        for i, p in enumerate(papers, 1):
-            authors = ", ".join(p["authors"][:3])
-            typer.echo(f"{i}. \"{p['title']}\"")
-            typer.echo(f"   {authors} | {p['publication_date']} | Cited: {p['cited_by_count']}")
-            typer.echo(f"   DOI: {p['doi']}")
-            if p.get("open_access_url"):
-                typer.echo(f"   OA: {p['open_access_url']}")
-            typer.echo()
+        import dataclasses
+        typer.echo(json_mod.dumps([dataclasses.asdict(p) for p in unique], indent=2))
+        return
+
+    # Tabular output (120-col, 40-char title truncation unless --wide)
+    title_col = 60 if wide else _TITLE_WIDTH
+    typer.echo(f"Paper Discovery — {len(unique)} suggestions\n")
+    for i, p in enumerate(unique, 1):
+        title = p.title if wide else (
+            p.title[:title_col] + "…" if len(p.title) > title_col else p.title
+        )
+        oa_tag = "[OA]" if p.is_oa else "    "
+        year_str = str(p.year) if p.year else "????"
+        typer.echo(f"{i:2}. {title}")
+        typer.echo(f"    {oa_tag} {year_str} | Cited: {p.cited_by_count:4d} | DOI: {p.doi} | mode: {p.mode}")
+    typer.echo()
 
 
 @app.command(name="audit")
