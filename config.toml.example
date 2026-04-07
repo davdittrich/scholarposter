@@ -90,6 +90,11 @@ enabled = true
 timeout_seconds = 10
 max_redirects = 5
 
+[enrichment.progressive]
+# Skip full PDF download when Crossref already provides a usable abstract.
+# Reduces bandwidth and latency for PDF-linked papers (Stage 2.5 pre-check).
+enabled = true
+
 [[notifications.backends]]
 type = "ntfy"
 topic = "scholarposter"
@@ -118,3 +123,28 @@ retention = "30 days"
 state_file = "state.json"
 cache_file = "cache.json"
 lock_file = "scholarposter.lock"
+
+[audit]
+# Audit log for post outcomes (US-015a). Set enabled = true to activate.
+enabled = false
+file = "audit.jsonl"          # resolved relative to this config file's directory
+min_report_sample = 3         # minimum records needed to compute summary statistics
+# Phase 6 placeholders — not enforced until log rotation is implemented:
+# rotation_max_mb = 50
+# retention_days = 365
+
+[discovery]
+# Citation graph discovery — find papers that cite or are cited by your posts (US-014).
+# Requires at least one DOI-enriched post in bibliography.json.
+enabled = false
+sources = ["openalex"]        # data sources; only "openalex" is supported in this release
+modes = ["cited-by", "cites"] # "cited-by" = papers citing yours; "cites" = your references
+                               # "co-cited" is Phase 6 (not yet implemented)
+limit = 20                    # max candidates returned per mode
+# digest_email = "you@example.com"  # e-mail address for digest delivery; omit to skip
+digest_auto = false           # send digest automatically after each run (requires digest_email)
+cache_ttl_hours = 24          # how long to cache OpenAlex responses
+
+[discovery.ranking]
+oa_weight = 1.2               # multiplier for OpenAlex citation count score
+recency_half_life_years = 2.0 # papers older than this get exponentially lower recency score
