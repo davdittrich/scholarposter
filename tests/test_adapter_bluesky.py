@@ -392,9 +392,10 @@ class TestBlueskyImageProcessing:
         with patch("scholarposter.adapters.bluesky.time") as mock_time:
             facets = _build_facets(text, mock_client)
 
+        from atproto import models as bsky_models
         mention_facets = [f for f in facets if any(
-            feat.get("$type") == "app.bsky.richtext.facet#mention"
-            for feat in f.get("features", [])
+            isinstance(feat, bsky_models.AppBskyRichtextFacet.Mention)
+            for feat in f.features
         )]
         assert len(mention_facets) <= 10
 
@@ -677,3 +678,34 @@ class TestCardDescriptionInEmbed:
         # Card should use card_title (Crossref) and card_description (Crossref abstract)
         assert record.embed.external.title == "Crossref Title"
         assert record.embed.external.description == "Crossref Abstract"
+
+
+class TestBuildFacetsReturnsSDKModels:
+    """Discriminating test: _build_facets must return SDK model instances, not dicts."""
+
+    def test_url_facet_is_sdk_model_instance(self):
+        from atproto import models
+        from scholarposter.adapters.bluesky import _build_facets
+        mock_client = MagicMock()
+        mock_client.com.atproto.identity.resolve_handle.side_effect = Exception("no mentions")
+
+        facets = _build_facets("Check https://example.com for details", mock_client)
+
+        assert len(facets) >= 1
+        for facet in facets:
+            assert isinstance(facet, models.AppBskyRichtextFacet.Main), (
+                f"Expected AppBskyRichtextFacet.Main, got {type(facet)!r}: {facet!r}"
+            )
+
+    def test_tag_facet_is_sdk_model_instance(self):
+        from atproto import models
+        from scholarposter.adapters.bluesky import _build_facets
+        mock_client = MagicMock()
+
+        facets = _build_facets("New paper on #MachineLearning!", mock_client)
+
+        assert len(facets) >= 1
+        for facet in facets:
+            assert isinstance(facet, models.AppBskyRichtextFacet.Main), (
+                f"Expected AppBskyRichtextFacet.Main, got {type(facet)!r}"
+            )

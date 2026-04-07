@@ -149,35 +149,41 @@ def chunk_text(text: str, max_graphemes: int = MAX_GRAPHEMES) -> list[str]:
     return chunks
 
 
-def _build_facets(text: str, client: Any) -> list[dict[str, Any]]:
+def _build_facets(text: str, client: Any) -> list[models.AppBskyRichtextFacet.Main]:
     """Build AT Protocol facets for a text string."""
-    facets: list[dict[str, Any]] = []
+    facets: list[models.AppBskyRichtextFacet.Main] = []
 
     mentions = parse_mentions(text)
     for m in mentions[:10]:  # FR-29: cap at 10 mentions
         try:
             resp = client.com.atproto.identity.resolve_handle(params={"handle": m["handle"]})
             did = resp.did
-            facets.append({
-                "index": {"byteStart": m["start"], "byteEnd": m["end"]},
-                "features": [{"$type": "app.bsky.richtext.facet#mention", "did": did}],
-            })
+            facets.append(models.AppBskyRichtextFacet.Main(
+                index=models.AppBskyRichtextFacet.ByteSlice(
+                    byte_start=m["start"], byte_end=m["end"]
+                ),
+                features=[models.AppBskyRichtextFacet.Mention(did=did)],
+            ))
         except Exception:
             pass  # Unresolvable mentions render as plain text
         finally:
             time.sleep(0.2)  # FR-29: always rate-limit, even on exception
 
     for u in parse_urls(text):
-        facets.append({
-            "index": {"byteStart": u["start"], "byteEnd": u["end"]},
-            "features": [{"$type": "app.bsky.richtext.facet#link", "uri": u["url"]}],
-        })
+        facets.append(models.AppBskyRichtextFacet.Main(
+            index=models.AppBskyRichtextFacet.ByteSlice(
+                byte_start=u["start"], byte_end=u["end"]
+            ),
+            features=[models.AppBskyRichtextFacet.Link(uri=u["url"])],
+        ))
 
     for t in parse_tags(text):
-        facets.append({
-            "index": {"byteStart": t["start"], "byteEnd": t["end"]},
-            "features": [{"$type": "app.bsky.richtext.facet#tag", "tag": t["tag"]}],
-        })
+        facets.append(models.AppBskyRichtextFacet.Main(
+            index=models.AppBskyRichtextFacet.ByteSlice(
+                byte_start=t["start"], byte_end=t["end"]
+            ),
+            features=[models.AppBskyRichtextFacet.Tag(tag=t["tag"])],
+        ))
 
     return facets
 

@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from scholarposter.auth.callback import (
+    _OAuthHTTPServer,
     is_headless,
     wait_for_callback_desktop,
     wait_for_callback_headless,
@@ -111,3 +112,31 @@ class TestHeadlessCallback:
         monkeypatch.setattr("builtins.input", lambda _: "not-a-url")
         with pytest.raises(OAuthError, match="Could not parse"):
             wait_for_callback_headless(expected_state="any")
+
+
+class TestOAuthHTTPServerSubclass:
+    def test_server_is_oauth_subclass_not_bare_httpserver(self):
+        """wait_for_callback_desktop must use _OAuthHTTPServer, not bare HTTPServer."""
+        from http.server import HTTPServer
+        port = 18910
+        state = "subclass-test-state"
+
+        import threading
+        import httpx
+
+        def _send():
+            time.sleep(0.05)
+            try:
+                httpx.get(
+                    f"http://127.0.0.1:{port}/callback?code=CODE&state={state}",
+                    timeout=2,
+                )
+            except Exception:
+                pass
+
+        threading.Thread(target=_send, daemon=True).start()
+        wait_for_callback_desktop(port=port, expected_state=state, timeout=3.0)
+
+        # _OAuthHTTPServer must be a subclass of HTTPServer (not the same class)
+        assert issubclass(_OAuthHTTPServer, HTTPServer)
+        assert _OAuthHTTPServer is not HTTPServer

@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Optional
+from typing import Optional, cast
 from urllib.parse import urlparse, parse_qs
 
 
@@ -16,22 +16,31 @@ class OAuthError(Exception):
         self.exit_code = exit_code
 
 
+class _OAuthHTTPServer(HTTPServer):
+    """HTTPServer subclass with OAuth callback state declared as typed attributes."""
+    _event: threading.Event
+    _oauth_code: Optional[str]
+    _oauth_state: Optional[str]
+    _oauth_error: Optional[str]
+
+
 class _CallbackHandler(BaseHTTPRequestHandler):
     """HTTP handler that captures the OAuth callback."""
 
     def do_GET(self):
+        server = cast(_OAuthHTTPServer, self.server)
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
 
         # Store result on the server instance
         if "error" in params:
             desc = params.get("error_description", [params["error"][0]])[0]
-            self.server._oauth_error = f"Authorization denied: {desc}"
+            server._oauth_error = f"Authorization denied: {desc}"
         elif "code" in params and "state" in params:
-            self.server._oauth_code = params["code"][0]
-            self.server._oauth_state = params["state"][0]
+            server._oauth_code = params["code"][0]
+            server._oauth_state = params["state"][0]
         else:
-            self.server._oauth_error = "Invalid callback: missing code or state parameter"
+            server._oauth_error = "Invalid callback: missing code or state parameter"
 
         # Send response to browser
         self.send_response(200)
@@ -40,7 +49,7 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"<html><body><h1>Authorization complete</h1><p>You can close this window.</p></body></html>")
 
         # Signal the main thread
-        self.server._event.set()
+        server._event.set()
 
     def log_message(self, format, *args):
         pass  # Suppress HTTP server logs
@@ -61,7 +70,7 @@ def wait_for_callback_desktop(port: int, expected_state: Optional[str] = None, t
     Raises OAuthError on timeout, denied, invalid state, or port conflict.
     """
     try:
-        server = HTTPServer(("127.0.0.1", port), _CallbackHandler)
+        server = _OAuthHTTPServer(("127.0.0.1", port), _CallbackHandler)
     except OSError:
         raise OAuthError(f"Port {port} is in use. Retry with --port <N>.")
 

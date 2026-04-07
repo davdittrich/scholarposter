@@ -103,7 +103,7 @@ def _ensure_lemonade_model(
     """
     global _cached_lemonade_model
     if _cached_lemonade_model is not None:
-        return _cached_lemonade_model
+        return _cached_lemonade_model or ""
 
     # Check if a model is already loaded
     try:
@@ -111,7 +111,7 @@ def _ensure_lemonade_model(
         models = resp.json().get("data", [])
         if models:
             _cached_lemonade_model = models[0]["id"]
-            return _cached_lemonade_model
+            return _cached_lemonade_model or ""
     except Exception:
         pass
 
@@ -141,7 +141,7 @@ def _ensure_lemonade_model(
             models = resp.json().get("data", [])
             if models:
                 _cached_lemonade_model = models[0]["id"]
-                return _cached_lemonade_model
+                return _cached_lemonade_model or ""
         except Exception:
             pass
         _cached_lemonade_model = chosen
