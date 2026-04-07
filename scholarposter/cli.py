@@ -909,3 +909,76 @@ def audit_cmd(
         typer.echo(
             f"{ts:<22} {toot_id:<20} {plat:<10} {st:<8} {doi:<20} {backend:<12} {sc:<10} {engagement}"
         )
+
+
+@app.command(name="sync-engagement")
+def sync_engagement_cmd(
+    config: Path = typer.Option(Path("config.toml"), "--config", help="Path to config.toml"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print planned updates without writing"),
+    force: bool = typer.Option(False, "--force", help="Re-sync records already synced"),
+) -> None:
+    """Sync Bluesky likes/reposts into audit.jsonl (FR-93)."""
+    import fcntl
+
+    from scholarposter.audit.engagement import sync_engagement
+
+    try:
+        cfg = load_config(config)
+    except Exception as e:
+        typer.echo(f"Config error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    if not cfg.audit.enabled or cfg.audit.resolved_file is None:
+        typer.echo("Audit logging is disabled. Set [audit] enabled = true in config.toml.", err=True)
+        raise typer.Exit(code=1)
+
+    audit_path = cfg.audit.resolved_file
+    lock_path = audit_path.with_suffix(".lock")
+
+    # Acquire exclusive lock; exit nonzero if another process holds it
+    try:
+        lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        typer.echo(
+            "Could not acquire audit lock — another process is running. "
+            "Try again shortly.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        email = os.environ.get("BLUESKY_EMAIL")
+        password = os.environ.get("BLUESKY_PASSWORD")
+        if not email or not password:
+            typer.echo("Missing BLUESKY_EMAIL or BLUESKY_PASSWORD env vars.", err=True)
+            raise typer.Exit(code=1)
+
+        from atproto import Client
+        client = Client()
+        try:
+            client.login(email, password)
+        except Exception as e:
+            typer.echo(f"Bluesky login failed: {_redact(str(e))}", err=True)
+            raise typer.Exit(code=1)
+
+        synced, skipped, errors = sync_engagement(
+            audit_path=audit_path,
+            client=client,
+            dry_run=dry_run,
+            force=force,
+        )
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+        except OSError:
+            pass
+
+    prefix = "[dry-run] " if dry_run else ""
+    typer.echo(
+        f"{prefix}Synced engagement for {synced} posts "
+        f"({skipped} skipped, {errors} errors)."
+    )
+    if errors:
+        raise typer.Exit(code=1)

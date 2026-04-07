@@ -148,6 +148,35 @@ scholarposter discover --json
 Queries OpenAlex based on your bibliography's author frequency. Excludes papers
 you've already shared.
 
+### Querying the audit log
+
+When `[audit] enabled = true`, every cross-post is recorded to `audit.jsonl`:
+
+```bash
+scholarposter audit                           # tabular summary
+scholarposter audit --platform bluesky        # filter by platform
+scholarposter audit --status failed           # filter by status
+scholarposter audit --since 2026-01-01        # date range
+scholarposter audit --json                    # raw JSON-lines output
+scholarposter audit --csv                     # CSV for spreadsheets
+scholarposter audit --limit 20                # most recent 20 records
+```
+
+### Syncing Bluesky engagement
+
+After posting, fetch current like and repost counts from Bluesky and write
+them back into `audit.jsonl` (requires `[audit] enabled = true`):
+
+```bash
+scholarposter sync-engagement                 # sync all unsynced posts
+scholarposter sync-engagement --dry-run       # preview without writing
+scholarposter sync-engagement --force         # re-sync already-synced posts
+```
+
+Requires `BLUESKY_EMAIL` and `BLUESKY_PASSWORD` environment variables.
+Only Bluesky records are synced; LinkedIn records are skipped.
+Prints `Synced engagement for N posts (M skipped, K errors).`
+
 ### Validating configuration
 
 ```bash
