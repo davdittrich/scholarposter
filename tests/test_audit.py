@@ -398,6 +398,39 @@ class TestAuditSubcommand:
         parsed = json.loads(result.output.strip())
         assert parsed["toot_id"] == "2"
 
+    def test_filter_by_until(self, tmp_path):
+        """--until excludes records after end-of-day on the given date."""
+        p = tmp_path / "config.toml"
+        p.write_text(_AUDIT_TOML)
+        records = [
+            {"timestamp": "2026-04-05T12:00:00Z", "toot_id": "1",
+             "platform": "bluesky", "status": "posted"},
+            {"timestamp": "2026-04-07T12:00:00Z", "toot_id": "2",
+             "platform": "bluesky", "status": "posted"},
+        ]
+        self._write_audit_records(tmp_path / "audit.jsonl", records)
+        result = runner.invoke(app, ["audit", "--config", str(p),
+                                     "--json", "--until", "2026-04-06"])
+        assert result.exit_code == 0
+        parsed = json.loads(result.output.strip())
+        assert parsed["toot_id"] == "1"  # Apr-05 inside; Apr-07 outside
+
+    def test_since_and_until_combined(self, tmp_path):
+        """--since + --until both applied; only records in range returned."""
+        p = tmp_path / "config.toml"
+        p.write_text(_AUDIT_TOML)
+        records = [
+            {"timestamp": "2026-04-01T00:00:00Z", "toot_id": "1", "platform": "bluesky", "status": "posted"},
+            {"timestamp": "2026-04-05T12:00:00Z", "toot_id": "2", "platform": "bluesky", "status": "posted"},
+            {"timestamp": "2026-04-10T00:00:00Z", "toot_id": "3", "platform": "bluesky", "status": "posted"},
+        ]
+        self._write_audit_records(tmp_path / "audit.jsonl", records)
+        result = runner.invoke(app, ["audit", "--config", str(p),
+                                     "--json", "--since", "2026-04-03", "--until", "2026-04-07"])
+        assert result.exit_code == 0
+        parsed = json.loads(result.output.strip())
+        assert parsed["toot_id"] == "2"
+
     def test_limit_flag(self, tmp_path):
         p = tmp_path / "config.toml"
         p.write_text(_AUDIT_TOML)
