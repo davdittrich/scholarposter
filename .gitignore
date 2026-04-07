@@ -12,6 +12,7 @@ cache.json
 cache.json.tmp
 bibliography.json
 scholarposter.lock
+audit.jsonl
 config.toml
 
 # Logs

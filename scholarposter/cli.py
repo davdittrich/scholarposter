@@ -14,6 +14,7 @@ from dotenv import find_dotenv, load_dotenv
 from loguru import logger
 from mastodon import Mastodon, MastodonAPIError
 
+from scholarposter.audit.log import build_audit_record
 from scholarposter.collector import MastodonCollector
 from scholarposter.config import EnrichmentConfig, NotificationBackendConfig, PlatformConfig, ScholarposterConfig, load_config
 from scholarposter.enrichment.pipeline import EnrichmentPipeline
@@ -173,6 +174,7 @@ def run(
         state_file=cfg.state.state_file,
         cache_file=cfg.state.cache_file,
         lock_file=cfg.state.lock_file,
+        audit_file=cfg.audit.resolved_file if cfg.audit.enabled else None,
     )
 
     if not state_mgr.acquire_lock():
@@ -235,6 +237,17 @@ def run(
                 logger.info(f"[{plat}] Retrying ({attempt+1}/2) after transient error")
                 time.sleep(2 ** attempt)
                 result = _dispatch_post(plat, post, plat_cfg, dry_run, state_mgr=state_mgr, env_path=env_path)
+
+            # FR-90: audit log — one record per (toot, platform), outside dry_run guard
+            if cfg.audit.enabled:
+                record = build_audit_record(
+                    toot_id=post.source_id,
+                    platform=plat,
+                    post=post,
+                    result=result,
+                    dry_run=dry_run,
+                )
+                state_mgr.append_audit(record)
 
             # FR-37: set last_posted_at on success; last_error on failure
             # Dry-run: adapter still returns POSTED but we do NOT persist state
@@ -764,3 +777,135 @@ def discover(
             if p.get("open_access_url"):
                 typer.echo(f"   OA: {p['open_access_url']}")
             typer.echo()
+
+
+@app.command(name="audit")
+def audit_cmd(
+    config: Path = typer.Option(Path("config.toml"), "--config", help="Path to config.toml"),
+    platform: Optional[str] = typer.Option(None, "--platform", help="Filter by platform"),
+    since: Optional[str] = typer.Option(None, "--since", help="Filter from date (YYYY-MM-DD)"),
+    until: Optional[str] = typer.Option(None, "--until", help="Filter until date (YYYY-MM-DD, inclusive)"),
+    status_filter: Optional[str] = typer.Option(None, "--status", help="Filter by status: posted|failed|dry_run"),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Max records to show"),
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON-lines"),
+    csv_output: bool = typer.Option(False, "--csv", help="Emit CSV"),
+) -> None:
+    """Query the audit log (FR-92)."""
+    import csv
+    import io
+    import json as json_mod
+
+    try:
+        cfg = load_config(config)
+    except Exception as e:
+        typer.echo(f"Config error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    if not cfg.audit.enabled or cfg.audit.resolved_file is None:
+        typer.echo("Audit logging is disabled. Set [audit] enabled = true in config.toml.", err=True)
+        raise typer.Exit(code=1)
+
+    audit_path = cfg.audit.resolved_file
+    if not audit_path.exists():
+        typer.echo("No audit records matching filter.")
+        return
+
+    # Parse since/until date boundaries
+    since_dt: Optional[datetime] = None
+    until_dt: Optional[datetime] = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
+        except ValueError:
+            typer.echo(f"Invalid --since date: {since}", err=True)
+            raise typer.Exit(code=2)
+    if until:
+        try:
+            until_dt = datetime.fromisoformat(until).replace(
+                hour=23, minute=59, second=59, tzinfo=timezone.utc
+            )
+        except ValueError:
+            typer.echo(f"Invalid --until date: {until}", err=True)
+            raise typer.Exit(code=2)
+
+    # Read and filter records
+    records: list[dict] = []
+    with open(audit_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json_mod.loads(line)
+            except json_mod.JSONDecodeError:
+                continue
+            if platform and rec.get("platform") != platform:
+                continue
+            if status_filter and rec.get("status") != status_filter:
+                continue
+            if since_dt:
+                ts_str = rec.get("timestamp", "")
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if ts < since_dt:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            if until_dt:
+                ts_str = rec.get("timestamp", "")
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if ts > until_dt:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            records.append(rec)
+
+    if limit is not None:
+        records = records[:limit]
+
+    if not records:
+        typer.echo("No audit records matching filter.")
+        return
+
+    if json_output:
+        for rec in records:
+            typer.echo(json_mod.dumps(rec))
+        return
+
+    if csv_output:
+        columns = [
+            "timestamp", "toot_id", "platform", "status", "doi",
+            "llm_backend_used", "summary_chars", "bluesky_likes",
+            "bluesky_reposts", "engagement_synced_at",
+        ]
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        for rec in records:
+            writer.writerow(rec)
+        typer.echo(buf.getvalue().rstrip())
+        return
+
+    # Default: tabular output
+    # Columns: timestamp | toot_id | platform | status | doi | llm_backend | summary_chars | engagement
+    header = f"{'timestamp':<22} {'toot_id':<20} {'platform':<10} {'status':<8} {'doi':<20} {'llm_backend':<12} {'sum_chars':<10} engagement"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for rec in records:
+        ts = rec.get("timestamp", "")[:19]
+        toot_id = str(rec.get("toot_id", ""))[:20]
+        plat = str(rec.get("platform", ""))[:10]
+        st = str(rec.get("status", ""))[:8]
+        doi = str(rec.get("doi") or "")[:20]
+        backend = str(rec.get("llm_backend_used") or "")[:12]
+        sc = str(rec.get("summary_chars") or "")[:10]
+        likes = rec.get("bluesky_likes")
+        reposts = rec.get("bluesky_reposts")
+        if likes is None and reposts is None:
+            engagement = "unsynced"
+        else:
+            engagement = f"likes={likes} reposts={reposts}"
+        typer.echo(
+            f"{ts:<22} {toot_id:<20} {plat:<10} {st:<8} {doi:<20} {backend:<12} {sc:<10} {engagement}"
+        )

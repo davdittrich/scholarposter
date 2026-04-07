@@ -21,11 +21,13 @@ class StateManager:
         state_file: str = "state.json",
         cache_file: str = "cache.json",
         lock_file: str = "scholarposter.lock",
+        audit_file: Optional[Path] = None,
     ):
         self._dir = Path(state_dir)
         self._state_path = self._dir / state_file
         self._cache_path = self._dir / cache_file
         self._lock_path = self._dir / lock_file
+        self._audit_path: Optional[Path] = audit_file
         self._lock_fd: Optional[int] = None
 
     # -------------------------------------------------------------------------
@@ -131,6 +133,35 @@ class StateManager:
         else:
             bib.append(entry_dict)
         self._save_bibliography(bib)
+
+    # -------------------------------------------------------------------------
+    # Audit log (FR-90)
+    # -------------------------------------------------------------------------
+
+    def append_audit(self, record: dict[str, Any]) -> None:
+        """Append one JSON-lines record to audit.jsonl.
+
+        Non-blocking: write failures are logged at WARNING and never propagate.
+        Must be called while the process lock is held (warns if not).
+        No-op when audit_file is None (audit disabled).
+        """
+        if self._audit_path is None:
+            return
+        if self._lock_fd is None:
+            logger.warning("append_audit called without holding lock")
+        try:
+            line = json.dumps(record, default=str) + "\n"
+            fd = os.open(
+                str(self._audit_path),
+                os.O_CREAT | os.O_APPEND | os.O_WRONLY,
+                0o600,
+            )
+            try:
+                os.write(fd, line.encode("utf-8"))
+            finally:
+                os.close(fd)
+        except Exception as e:
+            logger.warning(f"Audit write failed (non-blocking): {e}")
 
     # -------------------------------------------------------------------------
     # Locking
