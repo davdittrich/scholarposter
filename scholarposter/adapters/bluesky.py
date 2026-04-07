@@ -209,17 +209,21 @@ class BlueskyAdapter(BaseAdapter):
         root_ref: Optional[Any] = None
         parent_ref: Optional[Any] = None
         promoted_link = None
+        link_card_placed = False
 
         for i, chunk in enumerate(chunks):
             facets = _build_facets(chunk, self._client)
 
             if i == 0 and unified_post.media:
                 embed = self._build_image_embed(unified_post)
-                promoted_link = post_best_link  # Promote to chunk 2
-            else:
+                promoted_link = post_best_link  # Promote to next chunk
+            elif not link_card_placed:
                 selected = _select_best_link(unified_post.links, chunk, promoted_link)
                 embed = self._build_link_embed(selected)
-                promoted_link = None  # Only promote once
+                link_card_placed = True  # Card slot consumed; don't retry on later chunks
+                promoted_link = None
+            else:
+                embed = None
 
             reply = None
             if i > 0 and root_ref and parent_ref:

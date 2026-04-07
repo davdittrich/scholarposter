@@ -209,6 +209,104 @@ class TestBlueskyAdapter:
         result = adapter.post(post)
         assert result.status == PostStatus.FAILED
 
+    def test_threaded_link_card_only_on_first_chunk(self, mock_client):
+        """Discriminating: link card appears only on chunk 0; chunks 1+ get embed=None."""
+        mock_record = MagicMock()
+        mock_record.uri = "at://did:plc:testuser/app.bsky.feed.post/abc"
+        mock_record.cid = "bafy"
+        mock_client.com.atproto.repo.create_record.return_value = mock_record
+
+        from atproto import models as bsky_models
+        from scholarposter.config import MediaConfig
+
+        long_text = "This is a test post. " * 30  # produces 3+ chunks
+        link = LinkEnrichment(
+            original_url="https://example.com/paper",
+            resolved_url="https://example.com/paper",
+            title="Test Paper",
+        )
+        post = make_post(long_text, links=[link])
+        adapter = BlueskyAdapter(client=mock_client, media_config=MediaConfig(enabled=True))
+        adapter.post(post)
+
+        calls = mock_client.com.atproto.repo.create_record.call_args_list
+        assert len(calls) >= 3
+        assert calls[0].args[0].record.embed is not None  # card on chunk 0
+        assert calls[1].args[0].record.embed is None       # no card on chunk 1
+        assert calls[2].args[0].record.embed is None       # no card on chunk 2
+
+    def test_threaded_link_card_on_second_chunk_when_media(self, mock_client):
+        """Discriminating: with media, link card appears on chunk 1 only (not chunk 2+).
+
+        The image build may silently fail if the blob mock is rejected by Pydantic, but
+        promoted_link is still set on chunk 0's media branch — so chunk 1 gets the card
+        and chunk 2 gets None. Old code gave chunk 2 a duplicate card via max(links) fallback.
+        """
+        from atproto import models as bsky_models
+        from scholarposter.config import MediaConfig
+
+        mock_record = MagicMock()
+        mock_record.uri = "at://did:plc:testuser/app.bsky.feed.post/abc"
+        mock_record.cid = "bafy"
+        mock_client.com.atproto.repo.create_record.return_value = mock_record
+
+        long_text = "This is a test post. " * 30  # produces 3+ chunks
+        att = MediaAttachment(url="https://example.com/img.jpg", mime_type="image/jpeg")
+        link = LinkEnrichment(
+            original_url="https://example.com/paper",
+            resolved_url="https://example.com/paper",
+            title="Test Paper",
+        )
+        post = make_post(long_text, media=[att], links=[link])
+        adapter = BlueskyAdapter(client=mock_client, media_config=MediaConfig(enabled=True))
+
+        with patch("scholarposter.adapters.bluesky.download_media", return_value=b"\xff\xd8\xff"):
+            with patch("scholarposter.adapters.bluesky.resize_image", return_value=b"\xff\xd8\xff"):
+                adapter.post(post)
+
+        calls = mock_client.com.atproto.repo.create_record.call_args_list
+        assert len(calls) >= 3
+        # Chunk 0: entered media branch — not a link card regardless of image-build outcome
+        assert not isinstance(calls[0].args[0].record.embed, bsky_models.AppBskyEmbedExternal.Main)
+        # Chunk 1: gets the promoted link card
+        assert isinstance(calls[1].args[0].record.embed, bsky_models.AppBskyEmbedExternal.Main)
+        # Chunk 2: no card — key discriminating assertion against the duplicate-card bug
+        assert calls[2].args[0].record.embed is None
+
+    def test_threaded_link_card_on_first_chunk_when_url_in_later_chunk(self, mock_client):
+        """Discriminating: card placed on chunk 0 even when URL text appears only in chunk 1."""
+        from atproto import models as bsky_models
+        from scholarposter.config import MediaConfig
+        from scholarposter.adapters.bluesky import chunk_text as _chunk_text
+
+        mock_record = MagicMock()
+        mock_record.uri = "at://did:plc:testuser/app.bsky.feed.post/abc"
+        mock_record.cid = "bafy"
+        mock_client.com.atproto.repo.create_record.return_value = mock_record
+
+        url = "https://example.com/paper"
+        # 58 "word" tokens ≈ 289 graphemes joined; the URL (26 graphemes) overflows
+        # the 294-grapheme chunk-0 budget and is placed at the start of chunk 1.
+        prefix = " ".join(["word"] * 58)
+        suffix = " ".join(["extra"] * 60)  # fills chunks 2+
+        text = prefix + " " + url + " " + suffix
+
+        # Verify precondition
+        chunks_preview = _chunk_text(text)
+        assert url not in chunks_preview[0], "Precondition: URL must not appear in chunk 0"
+
+        link = LinkEnrichment(original_url=url, resolved_url=url, title="Test Paper")
+        post = make_post(text, links=[link])
+        adapter = BlueskyAdapter(client=mock_client, media_config=MediaConfig(enabled=True))
+        adapter.post(post)
+
+        calls = mock_client.com.atproto.repo.create_record.call_args_list
+        assert len(calls) >= 3
+        # Card placed on chunk 0 via enrichment-rank fallback (not URL-text match)
+        assert calls[0].args[0].record.embed is not None
+        assert calls[1].args[0].record.embed is None
+        assert calls[2].args[0].record.embed is None
+
 class TestBlueskyImageProcessing:
     @pytest.fixture
     def mock_client(self):
