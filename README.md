@@ -148,11 +148,21 @@ scholarposter discover --since 2025-01-01       # papers from 2025 onwards
 scholarposter discover --limit 20               # top 20 suggestions
 scholarposter discover --json                   # JSON output
 scholarposter discover --wide                   # full-length titles
+scholarposter discover --email-digest           # send digest to discovery.digest_email
 ```
 
 Requires `[discovery] enabled = true` in config.  Uses OpenAlex polite pool
 (set `etiquette_email` in `[enrichment.crossref]`).  Excludes papers already
 in your bibliography.
+
+Results are ranked by a composite score: citation velocity × OA weight × recency
+decay (configurable via `[discovery.ranking]`).  Duplicate DOIs from different
+modes are deduplicated, keeping the highest-scoring copy.
+
+To receive an email digest, set `digest_email` in `[discovery]` and pass
+`--email-digest`.  The digest is sent via SMTP (defaults to `localhost:25`; uses
+the first `[[notifications.backends]]` entry of `type = "email"` if configured).
+Subject: `scholarposter discovery digest — YYYY-MM-DD: N new candidates`.
 
 ### Querying the audit log
 
@@ -293,7 +303,9 @@ scholarposter/
 ├── discovery/              # OpenAlex citation graph discovery
 │   ├── __init__.py         #   CandidatePaper dataclass
 │   ├── graph.py            #   cited_by / cites traversal (httpx sync)
-│   └── cache.py            #   atomic TTL cache (discovery_cache.json)
+│   ├── cache.py            #   atomic TTL cache (discovery_cache.json)
+│   ├── ranking.py          #   composite score + top-N ranking
+│   └── digest.py           #   format_table + send_digest (SMTP)
 ├── migration.py            # Legacy lasttoot*.txt → state.json migration
 ├── env_writer.py           # Atomic .env read/write with 0600 permissions
 ├── auth/

@@ -750,6 +750,8 @@ def discover(
     limit: int = typer.Option(10, "--limit", help="Max suggestions"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     wide: bool = typer.Option(False, "--wide", help="Don't truncate titles"),
+    email_digest: bool = typer.Option(False, "--email-digest",
+        help="Send digest email to discovery.digest_email"),
 ) -> None:
     """Discover related papers via OpenAlex citation graph (US-014)."""
     import json as json_mod
@@ -832,15 +834,9 @@ def discover(
     if since_year:
         results = [p for p in results if p.year is None or p.year >= since_year]
 
-    # Deduplicate (across modes)
-    seen: dict[str, object] = {}
-    unique = []
-    for p in results:
-        if p.doi not in seen:
-            seen[p.doi] = None
-            unique.append(p)
-
-    unique = unique[:limit]
+    # Rank: deduplicate by DOI (highest score wins), sort descending, top N
+    from scholarposter.discovery.ranking import rank as _rank
+    unique = _rank(results, effective_cfg.ranking, limit)
 
     if not unique:
         typer.echo("No new papers found matching your interests.")
@@ -852,17 +848,40 @@ def discover(
         return
 
     # Tabular output (120-col, 40-char title truncation unless --wide)
-    title_col = 60 if wide else _TITLE_WIDTH
+    from scholarposter.discovery.digest import format_table as _format_table
     typer.echo(f"Paper Discovery — {len(unique)} suggestions\n")
-    for i, p in enumerate(unique, 1):
-        title = p.title if wide else (
-            p.title[:title_col] + "…" if len(p.title) > title_col else p.title
-        )
-        oa_tag = "[OA]" if p.is_oa else "    "
-        year_str = str(p.year) if p.year else "????"
-        typer.echo(f"{i:2}. {title}")
-        typer.echo(f"    {oa_tag} {year_str} | Cited: {p.cited_by_count:4d} | DOI: {p.doi} | mode: {p.mode}")
+    typer.echo(_format_table(unique, wide=wide))
     typer.echo()
+
+    # --email-digest
+    if email_digest:
+        disc_email = effective_cfg.digest_email
+        if not disc_email:
+            typer.echo(
+                "Error: --email-digest requires discovery.digest_email to be set in config.toml",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        from datetime import date as _date
+        from scholarposter.discovery.digest import send_digest as _send_digest
+        # Find SMTP backend from notifications config if available
+        smtp_host, smtp_port, from_addr = "localhost", 25, "scholarposter@localhost"
+        if cfg:
+            for backend in cfg.notifications.backends:
+                if backend.type == "email" and backend.smtp_host:
+                    smtp_host = backend.smtp_host
+                    smtp_port = backend.smtp_port
+                    from_addr = backend.from_addr or from_addr
+                    break
+        try:
+            _send_digest(
+                unique, effective_cfg, _date.today(),
+                smtp_host=smtp_host, smtp_port=smtp_port, from_addr=from_addr,
+            )
+            typer.echo(f"Digest sent to {disc_email}.")
+        except Exception as e:
+            typer.echo(f"Error sending digest: {e}", err=True)
+            raise typer.Exit(code=1)
 
 
 @app.command(name="audit")
