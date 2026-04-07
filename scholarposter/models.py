@@ -94,6 +94,9 @@ class LinkEnrichment(BaseModel):
     link_type: LinkType = LinkType.WEBPAGE
     crossref_title: Optional[str] = None
     crossref_abstract: Optional[str] = None
+    # US-013 / US-015a audit metadata (populated by EnrichmentPipeline)
+    enrichment_path: list[str] = []
+    llm_backend_used: Optional[str] = None
 
     @property
     def enrichment_rank(self) -> int:

@@ -18,6 +18,7 @@ from scholarposter.models import LinkEnrichment, LinkType, UnifiedPost
 from scholarposter.state import StateManager
 
 _MAX_HTML_BYTES = 5_000_000
+_PROGRESSIVE_MIN_ABSTRACT_CHARS = 20
 
 
 class EnrichmentPipeline:
@@ -38,6 +39,7 @@ class EnrichmentPipeline:
     def _enrich_url(self, url: str, context_text: str) -> LinkEnrichment | None:
         """Enrich a single URL: unshorten, detect type, extract metadata."""
         link = LinkEnrichment(original_url=url)
+        path: list[str] = []
 
         # Stage 1: URL unshortening
         try:
@@ -48,11 +50,12 @@ class EnrichmentPipeline:
                     max_redirects=self._cfg.url_unshorten.max_redirects,
                 )
                 link = link.model_copy(update={"resolved_url": resolved})
+                path.append("stage_1_unshorten")
             else:
                 resolved = url
         except Exception as e:
             logger.warning(f"URL unshorten failed for {url}: {e}")
-            return link
+            return link.model_copy(update={"enrichment_path": path})
 
         # Stage 2: Detect content type
         try:
@@ -69,38 +72,130 @@ class EnrichmentPipeline:
             or resolved.lower().endswith(".pdf")
         )
 
+        # Stage 2.5: Progressive pre-check for PDF URLs (US-013)
+        # Run DOI detection + Crossref early; skip PDF download if abstract is sufficient.
+        if is_pdf and self._cfg.crossref.enabled:
+            link, path, pdf_skipped = self._stage_25_progressive_precheck(
+                link, resolved, path
+            )
+            if pdf_skipped:
+                link = link.model_copy(update={"enrichment_path": path})
+                return link
+
         # Stage 3: Extract content based on type
         if is_pdf:
             link = self._enrich_pdf(link, resolved)
+            path.append("stage_3_pdf")
         else:
             link = self._enrich_html(link, resolved)
+            path.append("stage_3_html")
 
         # Stage 3.5: DOI from URL pattern (shared across HTML/PDF paths)
         if not link.doi:
             doi = self._detect_doi_from_url(resolved)
             if doi:
                 link = link.model_copy(update={"doi": doi})
+                path.append("stage_3.5_doi_url")
 
-        # Stage 4: DOI detection + lookup
-        if self._cfg.crossref.enabled:
+        # Stage 4: DOI detection + lookup (skip if Stage 2.5 already ran Crossref)
+        if self._cfg.crossref.enabled and "stage_2.5_crossref" not in path:
             link = self._enrich_doi(link, context_text)
+            if link.doi:
+                path.append("stage_4_crossref")
 
         # Stage 5: Summarization
-        if self._cfg.summarization.enabled and link.body_text:
+        # FR-76: guard uses body_text OR crossref_abstract
+        text_input = link.body_text or link.crossref_abstract
+        if self._cfg.summarization.enabled and text_input:
             try:
-                summary = summarize(
-                    text=link.body_text,
+                summary_text, backend_name = summarize(
+                    text=text_input,
                     backend=self._cfg.summarization.backend,
                     max_chars=self._cfg.summarization.max_chars,
                     prompt=self._cfg.summarization.prompt,
                     config=self._cfg.summarization,
                 )
-                if summary:
-                    link = link.model_copy(update={"summary": summary})
+                if summary_text:
+                    path.append("stage_5_summarize")
+                    link = link.model_copy(update={
+                        "summary": summary_text,
+                        "llm_backend_used": backend_name,
+                    })
             except Exception as e:
                 logger.warning(f"Summarization failed: {e}")
 
+        link = link.model_copy(update={"enrichment_path": path})
         return link
+
+    def _stage_25_progressive_precheck(
+        self,
+        link: LinkEnrichment,
+        resolved: str,
+        path: list[str],
+    ) -> tuple[LinkEnrichment, list[str], bool]:
+        """Stage 2.5: Early DOI+Crossref for PDF URLs.
+
+        Returns (updated_link, updated_path, pdf_skipped).
+        pdf_skipped=True means _enrich_pdf() should be skipped entirely.
+        """
+        # Early DOI detection from URL
+        doi = self._detect_doi_from_url(resolved)
+        if not doi:
+            return link, path, False
+
+        link = link.model_copy(update={"doi": doi})
+
+        # Early Crossref lookup (same logic as Stage 4)
+        cache_key = f"doi:{doi}"
+        cached = self._cache.cache_get(cache_key)
+        if cached:
+            data = cached
+        else:
+            try:
+                data = lookup_doi(
+                    doi,
+                    etiquette_email=self._cfg.crossref.etiquette_email,
+                    timeout=self._cfg.crossref.timeout_seconds,
+                )
+            except Exception as e:
+                logger.warning(f"Stage 2.5 DOI lookup failed for {doi}: {e}")
+                return link, path, False
+
+            if data:
+                self._cache.cache_set(
+                    cache_key, data, ttl_days=self._cfg.crossref.cache_ttl_days
+                )
+
+        if not data:
+            return link, path, False
+
+        updates: dict = {}
+        if data.get("title"):
+            updates["crossref_title"] = data["title"]
+            if not link.title:
+                updates["title"] = data["title"]
+        if data.get("abstract"):
+            updates["crossref_abstract"] = data["abstract"]
+            if not link.description:
+                updates["description"] = data["abstract"]
+
+        link = link.model_copy(update=updates)
+        path = path + ["stage_2.5_crossref"]
+
+        # Skip PDF download if abstract is long enough and progressive gating is on
+        abstract = link.crossref_abstract or ""
+        if (
+            self._cfg.progressive.enabled
+            and len(abstract) >= _PROGRESSIVE_MIN_ABSTRACT_CHARS
+        ):
+            path = path + ["stage_2.5_skip"]
+            logger.debug(
+                f"Stage 2.5: skipping PDF download for {resolved} — "
+                f"crossref_abstract ({len(abstract)} chars) is sufficient"
+            )
+            return link, path, True
+
+        return link, path, False
 
     def _detect_doi_from_url(self, url: str) -> Optional[str]:
         """Detect DOI from a URL. Returns None on failure."""

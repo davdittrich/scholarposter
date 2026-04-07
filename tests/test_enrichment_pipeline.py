@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from scholarposter.enrichment.pipeline import EnrichmentPipeline
-from scholarposter.config import EnrichmentConfig, CrossrefConfig, SummarizationConfig, UrlUnshortenConfig
+from scholarposter.config import EnrichmentConfig, CrossrefConfig, SummarizationConfig, UrlUnshortenConfig, ProgressiveEnrichmentConfig
 from scholarposter.models import UnifiedPost, LinkEnrichment, LinkType
 from scholarposter.state import StateManager
 
@@ -409,3 +409,258 @@ class TestCrossrefFieldSeparation:
             assert link.title == "Crossref Title"
             assert link.crossref_abstract == "Crossref Abstract"
             assert link.description == "Crossref Abstract"
+
+
+# ─── WU-2: Progressive Enrichment Gating + Audit Metadata ────────────────────
+
+def _make_progressive_config(enabled: bool = True) -> EnrichmentConfig:
+    """Build an EnrichmentConfig with progressive gating configured."""
+    return EnrichmentConfig(
+        crossref=CrossrefConfig(enabled=True, etiquette_email="test@example.com"),
+        summarization=SummarizationConfig(enabled=False),
+        url_unshorten=UrlUnshortenConfig(enabled=False),
+        progressive=ProgressiveEnrichmentConfig(enabled=enabled),
+    )
+
+
+class TestStage25ProgressiveGating:
+    """US-013: Stage 2.5 PDF pre-check — skip _enrich_pdf() when Crossref has sufficient abstract."""
+
+    def test_skips_pdf_when_abstract_sufficient_and_progressive_enabled(self, state):
+        """PDF download must NOT happen when crossref_abstract >= 20 chars and progressive.enabled."""
+        cfg = _make_progressive_config(enabled=True)
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+        long_abstract = "A" * 25  # >= 20 chars
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/paper.pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="application/pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=["10.1000/test"]),
+            patch("scholarposter.enrichment.pipeline.lookup_doi", return_value={
+                "title": "PDF Title", "abstract": long_abstract,
+            }),
+            patch("scholarposter.enrichment.pipeline.download_media") as mock_dl,
+        ):
+            post = make_post(urls=["https://example.com/paper.pdf"])
+            result = pipeline.enrich(post)
+            mock_dl.assert_not_called()  # PDF was NOT downloaded
+            link = result.links[0]
+            assert link.crossref_abstract == long_abstract
+            assert "stage_2.5_skip" in link.enrichment_path
+
+    def test_does_not_skip_pdf_when_progressive_disabled(self, state):
+        """When progressive.enabled=False, PDF is always downloaded regardless of abstract."""
+        cfg = _make_progressive_config(enabled=False)
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+        long_abstract = "A" * 25
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/paper.pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="application/pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=["10.1000/test"]),
+            patch("scholarposter.enrichment.pipeline.lookup_doi", return_value={
+                "title": "PDF Title", "abstract": long_abstract,
+            }),
+            patch("scholarposter.enrichment.pipeline.download_media", return_value=b"%PDF-fake") as mock_dl,
+            patch("scholarposter.enrichment.pipeline.extract_pdf_metadata", return_value={}),
+            patch("scholarposter.enrichment.pipeline.extract_pdf_text", return_value="pdf text"),
+        ):
+            post = make_post(urls=["https://example.com/paper.pdf"])
+            result = pipeline.enrich(post)
+            mock_dl.assert_called_once()  # PDF WAS downloaded
+            assert "stage_2.5_skip" not in result.links[0].enrichment_path
+
+    def test_does_not_skip_pdf_when_abstract_too_short(self, state):
+        """When crossref_abstract < 20 chars, PDF is downloaded even if progressive enabled."""
+        cfg = _make_progressive_config(enabled=True)
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+        short_abstract = "Too short"  # < 20 chars
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/paper.pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="application/pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=["10.1000/test"]),
+            patch("scholarposter.enrichment.pipeline.lookup_doi", return_value={
+                "title": "PDF Title", "abstract": short_abstract,
+            }),
+            patch("scholarposter.enrichment.pipeline.download_media", return_value=b"%PDF-fake") as mock_dl,
+            patch("scholarposter.enrichment.pipeline.extract_pdf_metadata", return_value={}),
+            patch("scholarposter.enrichment.pipeline.extract_pdf_text", return_value="pdf text"),
+        ):
+            post = make_post(urls=["https://example.com/paper.pdf"])
+            result = pipeline.enrich(post)
+            mock_dl.assert_called_once()  # PDF WAS downloaded
+            assert "stage_2.5_skip" not in result.links[0].enrichment_path
+
+    def test_does_not_skip_pdf_when_no_doi_found(self, state):
+        """When DOI cannot be found, abstract is not available; PDF must be downloaded."""
+        cfg = _make_progressive_config(enabled=True)
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/paper.pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="application/pdf"),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+            patch("scholarposter.enrichment.pipeline.download_media", return_value=b"%PDF-fake") as mock_dl,
+            patch("scholarposter.enrichment.pipeline.extract_pdf_metadata", return_value={}),
+            patch("scholarposter.enrichment.pipeline.extract_pdf_text", return_value="pdf text"),
+        ):
+            post = make_post(urls=["https://example.com/paper.pdf"])
+            result = pipeline.enrich(post)
+            mock_dl.assert_called_once()
+
+    def test_stage_25_only_applies_to_pdf_not_html(self, state):
+        """Stage 2.5 must not be triggered for HTML URLs."""
+        cfg = _make_progressive_config(enabled=True)
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/paper"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
+                "title": "HTML Paper", "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value="html body"),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://example.com/paper"])
+            result = pipeline.enrich(post)
+            assert "stage_2.5_skip" not in result.links[0].enrichment_path
+
+
+class TestStage5GuardAmendment:
+    """FR-76: Stage 5 guard uses body_text OR crossref_abstract."""
+
+    def test_summarizes_when_only_crossref_abstract_available(self, state):
+        """Summarization must run when body_text is None but crossref_abstract is set."""
+        cfg = EnrichmentConfig(
+            crossref=CrossrefConfig(enabled=True, etiquette_email="test@example.com"),
+            summarization=SummarizationConfig(enabled=True, backend="extractive"),
+            url_unshorten=UrlUnshortenConfig(enabled=False),
+        )
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/p"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
+                "title": None, "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=["10.9999/x"]),
+            patch("scholarposter.enrichment.pipeline.lookup_doi", return_value={
+                "title": "Title", "abstract": "A long abstract that summarizer can use."}),
+            patch("scholarposter.enrichment.pipeline.summarize",
+                  return_value=("Summary from abstract.", "extractive")) as mock_summ,
+        ):
+            post = make_post(urls=["https://example.com/p"])
+            result = pipeline.enrich(post)
+            mock_summ.assert_called_once()
+            # text_input to summarize() should be crossref_abstract, not body_text
+            call_kwargs = mock_summ.call_args
+            assert call_kwargs[1]["text"] != ""
+            assert "stage_5_summarize" in result.links[0].enrichment_path
+
+    def test_does_not_summarize_when_both_body_text_and_abstract_absent(self, state):
+        """No summarization when both body_text and crossref_abstract are None."""
+        cfg = EnrichmentConfig(
+            crossref=CrossrefConfig(enabled=True),
+            summarization=SummarizationConfig(enabled=True),
+            url_unshorten=UrlUnshortenConfig(enabled=False),
+        )
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/p"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
+                "title": None, "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+            patch("scholarposter.enrichment.pipeline.summarize") as mock_summ,
+        ):
+            post = make_post(urls=["https://example.com/p"])
+            pipeline.enrich(post)
+            mock_summ.assert_not_called()
+
+
+class TestEnrichmentMetadataFields:
+    """enrichment_path and llm_backend_used are populated by the pipeline."""
+
+    def test_enrichment_path_records_crossref_stage(self, state):
+        """'stage_4_crossref' must appear in enrichment_path when Crossref is queried."""
+        cfg = EnrichmentConfig(
+            crossref=CrossrefConfig(enabled=True, etiquette_email="test@example.com"),
+            summarization=SummarizationConfig(enabled=False),
+            url_unshorten=UrlUnshortenConfig(enabled=False),
+        )
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/p"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
+                "title": None, "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value=None),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=["10.1/x"]),
+            patch("scholarposter.enrichment.pipeline.lookup_doi", return_value={
+                "title": "T", "abstract": "Abstract text."}),
+        ):
+            post = make_post(urls=["https://example.com/p"])
+            result = pipeline.enrich(post)
+            assert "stage_4_crossref" in result.links[0].enrichment_path
+
+    def test_llm_backend_used_populated_after_summarization(self, state):
+        """link.llm_backend_used must be set to the backend name after Stage 5."""
+        cfg = EnrichmentConfig(
+            crossref=CrossrefConfig(enabled=False),
+            summarization=SummarizationConfig(enabled=True, backend="extractive"),
+            url_unshorten=UrlUnshortenConfig(enabled=False),
+        )
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/p"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
+                "title": None, "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value="Full body text here."),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+            patch("scholarposter.enrichment.pipeline.summarize",
+                  return_value=("A summary.", "extractive")),
+        ):
+            post = make_post(urls=["https://example.com/p"])
+            result = pipeline.enrich(post)
+            link = result.links[0]
+            assert link.llm_backend_used == "extractive"
+
+    def test_llm_backend_used_none_when_summarization_disabled(self, config, state):
+        """link.llm_backend_used stays None when summarization is disabled."""
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/p"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={
+                "title": None, "description": None, "image": None}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value="body"),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://example.com/p"])
+            result = pipeline.enrich(post)
+            assert result.links[0].llm_backend_used is None
+
+    def test_enrichment_path_default_empty_on_new_link(self):
+        """LinkEnrichment.enrichment_path is [] by default."""
+        link = LinkEnrichment(original_url="https://example.com")
+        assert link.enrichment_path == []

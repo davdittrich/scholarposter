@@ -273,12 +273,13 @@ def summarize(
     max_chars: int,
     prompt: str,
     config: SummarizationConfig,
-) -> str:
+) -> tuple[Optional[str], Optional[str]]:
     """Summarize text using the specified backend, with fallback chain.
 
     Fallback order: gemini -> lemonade -> ollama -> extractive.
     Result is truncated to max_chars.
-    Returns empty string if all backends fail.
+    Returns (text, backend_name) where text is the summary (or None if all backends fail)
+    and backend_name is the backend that produced the result (or None if none did).
     """
     # FR-20d: truncate input to safe byte limit
     text_bytes = text.encode("utf-8")
@@ -286,6 +287,7 @@ def summarize(
         text = text_bytes[:_MAX_STDIN_BYTES].decode("utf-8", errors="ignore")
 
     result: Optional[str] = None
+    used_backend: Optional[str] = None
 
     # Try backends in order starting from the preferred one
     backend_order = _build_backend_order(backend)
@@ -328,12 +330,13 @@ def summarize(
 
         if result:
             logger.debug(f"Summarizer: {b} produced {len(result)} chars")
+            used_backend = b
             break
 
     if not result:
-        return ""
+        return (None, None)
 
-    return result[:max_chars]
+    return (result[:max_chars], used_backend)
 
 
 def _build_backend_order(preferred: str) -> list[str]:

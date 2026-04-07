@@ -103,6 +103,26 @@ class TestLinkEnrichment:
         assert link.doi == "10.1000/xyz123"
         assert link.thumbnail_bytes == b"\xff\xd8\xff\xe0"
 
+    def test_enrichment_path_defaults_to_empty_list(self):
+        link = LinkEnrichment(original_url="https://example.com")
+        assert link.enrichment_path == []
+
+    def test_enrichment_path_accepts_list_of_strings(self):
+        link = LinkEnrichment(
+            original_url="https://example.com",
+            enrichment_path=["stage_1", "stage_3_html", "stage_4_crossref"],
+        )
+        assert "stage_1" in link.enrichment_path
+        assert "stage_4_crossref" in link.enrichment_path
+
+    def test_llm_backend_used_defaults_to_none(self):
+        link = LinkEnrichment(original_url="https://example.com")
+        assert link.llm_backend_used is None
+
+    def test_llm_backend_used_accepts_string(self):
+        link = LinkEnrichment(original_url="https://example.com", llm_backend_used="lemonade")
+        assert link.llm_backend_used == "lemonade"
+
 
 class TestLinkType:
     def test_enum_values(self):
