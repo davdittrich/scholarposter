@@ -338,6 +338,7 @@ scholarposter/
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `Another instance is already running` | Stale lock | `rm scholarposter.lock` |
+| `sync-engagement` fails to re-run after crash | Stale audit lock | Delete `<audit-log>.lock` (e.g. `rm audit.lock`) before retrying |
 | No posts, no errors | All toots processed | `scholarposter status` to check |
 | `HTTP 401` on LinkedIn | Token expired (60-day TTL) | Re-run OAuth; see [docs/auth-linkedin.md](docs/auth-linkedin.md) |
 | Summarization falls back to extractive | LLM backends unreachable | Check PATH; verify Lemonade/Ollama running; see [docs/summarization.md](docs/summarization.md) |

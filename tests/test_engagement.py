@@ -607,3 +607,49 @@ class TestSyncEngagementCmd:
             )
         assert result.exit_code == 0
         assert "1 posts" in result.output
+
+    # W4: lock file must be deleted after every exit path
+    def test_sync_engagement_lock_file_deleted_on_success(self, tmp_path):
+        """Lock file must not persist after successful sync."""
+        p = tmp_path / "config.toml"
+        p.write_text(_SYNC_TOML)
+        (tmp_path / "audit.jsonl").write_text("")
+        lock_path = tmp_path / "audit.lock"
+        with patch("atproto.Client"), \
+             patch("scholarposter.audit.engagement.sync_engagement", return_value=(1, 0, 0)):
+            runner.invoke(
+                app, ["sync-engagement", "--config", str(p)],
+                env={"BLUESKY_EMAIL": "u@x.com", "BLUESKY_PASSWORD": "pw"},
+            )
+        assert not lock_path.exists(), f"Lock file was not deleted: {lock_path}"
+
+    def test_sync_engagement_lock_file_deleted_on_inner_error(self, tmp_path):
+        """Lock file must not persist when sync_engagement itself raises."""
+        p = tmp_path / "config.toml"
+        p.write_text(_SYNC_TOML)
+        (tmp_path / "audit.jsonl").write_text("")
+        lock_path = tmp_path / "audit.lock"
+        with patch("atproto.Client"), \
+             patch("scholarposter.audit.engagement.sync_engagement",
+                   side_effect=RuntimeError("unexpected DB error")):
+            runner.invoke(
+                app, ["sync-engagement", "--config", str(p)],
+                env={"BLUESKY_EMAIL": "u@x.com", "BLUESKY_PASSWORD": "pw"},
+            )
+        assert not lock_path.exists(), f"Lock file was not deleted: {lock_path}"
+
+    def test_sync_engagement_lock_file_deleted_on_contention(self, tmp_path):
+        """Lock file must not persist when flock reports lock already held."""
+        p = tmp_path / "config.toml"
+        p.write_text(_SYNC_TOML)
+        (tmp_path / "audit.jsonl").write_text("")
+        lock_path = tmp_path / "audit.lock"
+        # Patch flock to raise (simulates EAGAIN/lock held by another process).
+        # os.open still runs and creates the file; our fix must unlink it.
+        with patch("fcntl.flock", side_effect=OSError("EAGAIN")):
+            result = runner.invoke(
+                app, ["sync-engagement", "--config", str(p)],
+                env={"BLUESKY_EMAIL": "u@x.com", "BLUESKY_PASSWORD": "pw"},
+            )
+        assert result.exit_code == 1
+        assert not lock_path.exists(), f"Lock file was not deleted on contention: {lock_path}"

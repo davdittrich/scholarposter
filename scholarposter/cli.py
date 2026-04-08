@@ -1045,6 +1045,11 @@ def sync_engagement_cmd(
         lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
+        try:
+            os.close(lock_fd)
+            lock_path.unlink(missing_ok=True)  # only when WE opened the file
+        except (OSError, UnboundLocalError):
+            pass  # os.open() failed — lock_fd unbound; don't unlink a file we didn't create
         typer.echo(
             "Could not acquire audit lock — another process is running. "
             "Try again shortly.",
@@ -1076,7 +1081,14 @@ def sync_engagement_cmd(
     finally:
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        try:
             os.close(lock_fd)
+        except OSError:
+            pass
+        try:
+            lock_path.unlink(missing_ok=True)
         except OSError:
             pass
 
