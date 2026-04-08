@@ -21,7 +21,7 @@ def format_table(papers: list[CandidatePaper], wide: bool = False) -> str:
     """
     if not papers:
         return ""
-    title_col = 60 if wide else _TITLE_WIDTH
+    title_col = _TITLE_WIDTH
     lines: list[str] = []
     for i, p in enumerate(papers, 1):
         if wide or len(p.title) <= title_col:
