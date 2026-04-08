@@ -638,18 +638,31 @@ class TestSyncEngagementCmd:
             )
         assert not lock_path.exists(), f"Lock file was not deleted: {lock_path}"
 
-    def test_sync_engagement_lock_file_deleted_on_contention(self, tmp_path):
-        """Lock file must not persist when flock reports lock already held."""
+    def test_sync_engagement_lock_file_not_deleted_on_contention(self, tmp_path):
+        """On flock contention, the lock file must NOT be deleted.
+
+        Invariant: when flock(EAGAIN) fires the file was opened by os.open(O_CREAT)
+        against an existing file owned by the lock-holding process. Deleting it
+        removes the directory entry from under the live holder, allowing a third
+        process to create a new inode at the same path and acquire a separate
+        flock, breaking mutual exclusion.
+
+        Discriminating: with the broken code (unlink on contention) lock_path is
+        deleted and this assertion fails. With the fixed code, lock_path survives.
+        """
         p = tmp_path / "config.toml"
         p.write_text(_SYNC_TOML)
         (tmp_path / "audit.jsonl").write_text("")
         lock_path = tmp_path / "audit.lock"
-        # Patch flock to raise (simulates EAGAIN/lock held by another process).
-        # os.open still runs and creates the file; our fix must unlink it.
+        # Pre-create simulates the file existing from the lock-holding process.
+        lock_path.write_text("owned by other process")
         with patch("fcntl.flock", side_effect=OSError("EAGAIN")):
             result = runner.invoke(
                 app, ["sync-engagement", "--config", str(p)],
                 env={"BLUESKY_EMAIL": "u@x.com", "BLUESKY_PASSWORD": "pw"},
             )
         assert result.exit_code == 1
-        assert not lock_path.exists(), f"Lock file was not deleted on contention: {lock_path}"
+        assert lock_path.exists(), (
+            "Contention handler must not delete the lock file; "
+            "it belongs to the process that holds the lock"
+        )
