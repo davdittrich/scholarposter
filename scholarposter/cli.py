@@ -980,7 +980,7 @@ def discover(
     """Discover related papers via OpenAlex citation graph (US-014)."""
     import json as json_mod
 
-    from scholarposter.discovery.graph import cited_by as _cited_by, cites as _cites
+    from scholarposter.discovery.graph import cited_by as _cited_by, cites as _cites, co_cited as _co_cited
 
     state_mgr, cfg = _load_config_and_state(config)
     email = cfg.enrichment.crossref.etiquette_email if cfg else ""
@@ -1001,12 +1001,8 @@ def discover(
         typer.echo(f"Unknown --mode '{mode}'. Choose from: {', '.join(sorted(_DISCOVER_MODES))}",
                    err=True)
         raise typer.Exit(code=1)
-    elif mode == "co-cited":
-        typer.echo("co-cited is not yet implemented (Phase 6).")
-        return
     elif mode == "all":
-        resolved_modes = ["cited-by", "cites"]
-        logger.info("co-cited skipped: Phase 6 not yet implemented")
+        resolved_modes = ["cited-by", "cites", "co-cited"]
     else:
         resolved_modes = [mode]
 
@@ -1051,6 +1047,10 @@ def discover(
                 results.extend(_cites(seed_dois, effective_cfg, email, client,
                                       bibliography_dois=bib_doi_set,
                                       cache=disc_cache))
+            elif m == "co-cited":
+                results.extend(_co_cited(seed_dois, effective_cfg, email, client,
+                                         bibliography_dois=bib_doi_set,
+                                         cache=disc_cache))
     finally:
         client.close()
 

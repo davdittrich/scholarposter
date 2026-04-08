@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 import httpx
 from loguru import logger
@@ -233,8 +233,71 @@ def co_cited(
     dois: list[str],
     config: DiscoveryConfig,
     email: str,
-    client: Any,
+    client: httpx.Client,
     bibliography_dois: Optional[set[str]] = None,
+    cache: Optional[DiscoveryCache] = None,
 ) -> list[CandidatePaper]:
-    """Not implemented — scheduled for Phase 6."""
-    raise NotImplementedError("co-cited mode is Phase 6")
+    """Return papers frequently cited alongside the seed DOIs (co-citation).
+
+    Traversal: for each seed, fetch citing papers → collect their referenced_works
+    → rank by co-citation frequency → batch-fetch top candidates.
+    """
+    bib_dois = bibliography_dois or set()
+    headers = _make_headers(email)
+    co_counts: dict[str, int] = {}  # OpenAlex W-id → co-citation frequency
+
+    for doi in dois:
+        try:
+            openalex_id = resolve_doi_to_openalex_id(
+                doi, email, client, cache=cache,
+                cache_ttl_hours=config.cache_ttl_hours,
+            )
+            if openalex_id is None:
+                logger.warning("co_cited: could not resolve DOI %s; skipping", doi)
+                continue
+            resp = client.get(
+                f"{_OPENALEX_BASE}/works",
+                params={
+                    "filter": f"cites:{openalex_id}",
+                    "per_page": min(config.limit, 50),
+                    "select": "id,referenced_works",
+                },
+                headers=headers,
+            )
+            if resp.status_code != 200:
+                logger.warning("co_cited: OpenAlex returned %s for %s", resp.status_code, doi)
+                continue
+            for citing_work in resp.json().get("results", []):
+                for ref_url in citing_work.get("referenced_works", []):
+                    ref_id = ref_url.split("/")[-1]
+                    if ref_id:
+                        co_counts[ref_id] = co_counts.get(ref_id, 0) + 1
+        except Exception as e:
+            logger.warning("co_cited failed for %s: %s", doi, e)
+
+    if not co_counts:
+        return []
+
+    # Batch-fetch top candidates by co-citation frequency
+    top_ids = sorted(co_counts, key=co_counts.__getitem__, reverse=True)
+    batch = top_ids[: min(len(top_ids), config.limit * 2)]
+    results: list[CandidatePaper] = []
+    try:
+        filter_val = "|".join(batch)
+        ref_resp = client.get(
+            f"{_OPENALEX_BASE}/works",
+            params={
+                "filter": f"ids.openalex:{filter_val}",
+                "per_page": min(len(batch), 200),  # OpenAlex hard max
+            },
+            headers=headers,
+        )
+        if ref_resp.status_code == 200:
+            for work in ref_resp.json().get("results", []):
+                paper = _parse_to_candidate(work, mode="co-cited")
+                if paper and paper.doi not in bib_dois:
+                    results.append(paper)
+    except Exception as e:
+        logger.warning("co_cited: batch fetch failed: %s", e)
+
+    return _deduplicate(results)

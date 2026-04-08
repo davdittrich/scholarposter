@@ -386,9 +386,72 @@ class TestCites:
 # ---------------------------------------------------------------------------
 
 class TestCoCited:
-    def test_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError, match="Phase 6"):
-            co_cited(["10.1/x"], _DEFAULT_CFG, _EMAIL, None)
+    @respx.mock
+    def test_returns_empty_when_no_citing_papers(self):
+        """co_cited returns [] when no citing papers are found for the seed."""
+        seed_work = _make_work(doi="10.1/x", openalex_id="W1")
+        respx.get(f"{_BASE}/works/https://doi.org/10.1/x").mock(
+            return_value=httpx.Response(200, json=seed_work)
+        )
+        respx.get(f"{_BASE}/works").mock(
+            return_value=httpx.Response(200, json={"results": [], "meta": {"count": 0}})
+        )
+        with httpx.Client() as client:
+            result = co_cited(["10.1/x"], _DEFAULT_CFG, _EMAIL, client)
+        assert result == []
+
+    @respx.mock
+    def test_returns_co_cited_papers(self):
+        """co_cited returns papers frequently cited by citing papers."""
+        seed_work = _make_work(doi="10.1/seed", openalex_id="W1")
+        citing_work = {
+            "id": "https://openalex.org/W2",
+            "referenced_works": ["https://openalex.org/W99"],
+        }
+        co_cited_paper = _make_work(doi="10.1/cocited", openalex_id="W99", title="Co-Cited Paper")
+
+        respx.get(f"{_BASE}/works/https://doi.org/10.1/seed").mock(
+            return_value=httpx.Response(200, json=seed_work)
+        )
+        respx.get(f"{_BASE}/works", params__contains={"filter": "cites:W1"}).mock(
+            return_value=httpx.Response(200, json={"results": [citing_work], "meta": {"count": 1}})
+        )
+        respx.get(f"{_BASE}/works", params__contains={"filter": "ids.openalex:W99"}).mock(
+            return_value=_work_list_response([co_cited_paper])
+        )
+
+        with httpx.Client() as client:
+            result = co_cited(["10.1/seed"], _DEFAULT_CFG, _EMAIL, client)
+        assert len(result) == 1
+        assert result[0].title == "Co-Cited Paper"
+        assert result[0].mode == "co-cited"
+
+    @respx.mock
+    def test_excludes_bibliography_dois(self):
+        """co_cited excludes papers already in bibliography_dois."""
+        seed_work = _make_work(doi="10.1/seed", openalex_id="W1")
+        citing_work = {
+            "id": "https://openalex.org/W2",
+            "referenced_works": ["https://openalex.org/W99"],
+        }
+        co_cited_paper = _make_work(doi="10.1/cocited", openalex_id="W99", title="Co-Cited Paper")
+
+        respx.get(f"{_BASE}/works/https://doi.org/10.1/seed").mock(
+            return_value=httpx.Response(200, json=seed_work)
+        )
+        respx.get(f"{_BASE}/works", params__contains={"filter": "cites:W1"}).mock(
+            return_value=httpx.Response(200, json={"results": [citing_work], "meta": {"count": 1}})
+        )
+        respx.get(f"{_BASE}/works", params__contains={"filter": "ids.openalex:W99"}).mock(
+            return_value=_work_list_response([co_cited_paper])
+        )
+
+        with httpx.Client() as client:
+            result = co_cited(
+                ["10.1/seed"], _DEFAULT_CFG, _EMAIL, client,
+                bibliography_dois={"10.1/cocited"},
+            )
+        assert result == []
 
 
 # ---------------------------------------------------------------------------
@@ -527,20 +590,39 @@ class TestDiscoverCmd:
         assert result.exit_code == 0
         assert "Referenced Paper" in result.output
 
-    def test_mode_co_cited_exits_0_with_message(self, tmp_path):
+    @respx.mock
+    def test_mode_co_cited_runs_algorithm(self, tmp_path):
+        """--mode co-cited runs the co-cited algorithm."""
         p = tmp_path / "config.toml"
         p.write_text(_DISC_TOML)
         bib = _make_bib(["10.1/seed"])
         (tmp_path / "bibliography.json").write_text(json.dumps(bib))
-        result = cli_runner.invoke(
-            app, ["discover", "--config", str(p), "--mode", "co-cited"]
+
+        seed_work = _make_work(doi="10.1/seed", openalex_id="W1")
+        # Citing paper references W99
+        citing_work = {"id": "https://openalex.org/W2", "referenced_works": ["https://openalex.org/W99"]}
+        co_cited_paper = _make_work(doi="10.1/cocited", openalex_id="W99", title="Co-Cited Paper")
+
+        # Resolve seed DOI
+        respx.get(f"{_BASE}/works/https://doi.org/10.1/seed").mock(
+            return_value=httpx.Response(200, json=seed_work)
         )
+        # Citing papers fetch (returns W2 with referenced_works=[W99])
+        respx.get(f"{_BASE}/works", params__contains={"filter": "cites:W1"}).mock(
+            return_value=httpx.Response(200, json={"results": [citing_work], "meta": {"count": 1}})
+        )
+        # Batch detail fetch
+        respx.get(f"{_BASE}/works", params__contains={"filter": "ids.openalex:W99"}).mock(
+            return_value=_work_list_response([co_cited_paper])
+        )
+
+        result = cli_runner.invoke(app, ["discover", "--config", str(p), "--mode", "co-cited"])
         assert result.exit_code == 0
-        assert "Phase 6" in result.output or "not yet implemented" in result.output
+        assert "Co-Cited Paper" in result.output
 
     @respx.mock
-    def test_mode_all_skips_co_cited(self, tmp_path):
-        """--mode all runs cited-by + cites; logs co-cited skipped."""
+    def test_mode_all_includes_co_cited(self, tmp_path):
+        """--mode all runs cited-by + cites + co-cited; co-cited paper appears in output."""
         p = tmp_path / "config.toml"
         p.write_text(_DISC_TOML)
         bib = _make_bib(["10.1/seed"])
@@ -550,26 +632,38 @@ class TestDiscoverCmd:
                                referenced_works=["https://openalex.org/W99"])
         paper_cited = _make_work(doi="10.1/c1", title="CitedBy", openalex_id="W2")
         paper_cites = _make_work(doi="10.1/c2", title="Cites", openalex_id="W99")
+        paper_co_cited = _make_work(doi="10.1/cc1", title="CoCited", openalex_id="W50")
+        # Citing paper for co-cited traversal: references W50
+        citing_work_for_co = {
+            "id": "https://openalex.org/W88",
+            "referenced_works": ["https://openalex.org/W50"],
+        }
 
-        # cited_by: resolve seed + filter
+        # Resolve seed → used by cited-by and co-cited
         respx.get(f"{_BASE}/works/https://doi.org/10.1/seed").mock(
             return_value=httpx.Response(200, json=seed_work)
         )
-        respx.get(f"{_BASE}/works").mock(
-            return_value=_work_list_response([paper_cited, paper_cites])
+        # cited-by + co-cited citing-papers: both filter=cites:W1
+        # Return citing_work_for_co which has referenced_works → co-cited picks up W50
+        respx.get(f"{_BASE}/works", params__contains={"filter": "cites:W1"}).mock(
+            return_value=httpx.Response(200, json={"results": [citing_work_for_co, paper_cited],
+                                                   "meta": {"count": 2}})
         )
-
-        messages = []
-        from loguru import logger
-        sid = logger.add(lambda m: messages.append(m.record["message"]))
+        # cites seed fetch: filter=ids.openalex:W99
+        respx.get(f"{_BASE}/works", params__contains={"filter": "ids.openalex:W99"}).mock(
+            return_value=_work_list_response([paper_cites])
+        )
+        # co-cited batch fetch: filter=ids.openalex:W50
+        respx.get(f"{_BASE}/works", params__contains={"filter": "ids.openalex:W50"}).mock(
+            return_value=_work_list_response([paper_co_cited])
+        )
 
         result = cli_runner.invoke(
             app, ["discover", "--config", str(p), "--mode", "all"]
         )
-        logger.remove(sid)
 
         assert result.exit_code == 0
-        assert any("co-cited" in m and ("skip" in m or "Phase 6" in m) for m in messages)
+        assert "CoCited" in result.output
 
     @respx.mock
     def test_t24_timeout_exits_0_no_results(self, tmp_path):

@@ -242,13 +242,19 @@ scholarposter discover [--mode MODE] [--since DATE] [--limit N] [--json] [--wide
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--config` | `config.toml` | Path to config file |
-| `--mode` | (config modes) | Traversal mode: `cited-by`, `cites`, or `all`. `co-cited` is accepted but not yet implemented. |
+| `--mode` | (config modes) | Traversal mode: `cited-by`, `cites`, `co-cited`, or `all`. |
 | `--since` | (none) | Restrict results to papers published from this date (YYYY-MM-DD) |
 | `--limit` | `10` | Maximum number of suggestions |
 | `--json` | off | Machine-readable JSON output |
 | `--wide` | off | Print full-length titles without truncation |
 | `--email-digest` | off | Send a digest to `discovery.digest_email` after displaying results |
 | `--days N` | (none) | **Deprecated.** Use `--since` instead. |
+
+Traversal modes:
+- `cited-by`: papers that cite your seed DOIs.
+- `cites`: papers referenced by your seed DOIs.
+- `co-cited`: papers frequently cited alongside your seeds by the same citing papers.
+- `all`: runs all three modes and merges results.
 
 Requires `[discovery] enabled = true` in `config.toml`. Excludes papers already in `bibliography.json`. Uses the OpenAlex polite pool; set `etiquette_email` in `[enrichment.crossref]` for priority access.
 
