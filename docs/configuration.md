@@ -25,7 +25,7 @@ One section per platform (`bluesky`, `linkedin`).
 | Key | Default | Description |
 |-----|---------|-------------|
 | `skip_hashtags` | `[]` | Skip toots containing any of these (case-insensitive) |
-| `skip_content_types` | `[]` | Skip toots matching these content types: `"sensitive"`, `"poll"`, `"media_only"`, `"reblog"` |
+| `skip_content_types` | `[]` | Skip toots matching these content types: `"sensitive"`, `"poll"`, `"media_only"`, `"reblog"`, `"reply"`, `"self_thread_reply"`, `"direct"`, `"private"`, `"unlisted"`, `"content_warning"`, `"mention"` |
 | `require_hashtags` | `[]` | Only post toots with at least one of these hashtags; empty list posts everything |
 
 See [filtering.md](filtering.md) for evaluation order, content type definitions, and hashtag rule behavior.

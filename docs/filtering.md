@@ -46,8 +46,40 @@ skip_content_types = ["sensitive", "reblog"]
 | `"poll"` | Toots that contain a poll attachment |
 | `"media_only"` | Toots with media attachments but no text body |
 | `"reblog"` | Boosts of another account's post |
+| `"reply"` | Replies to another account's post (`in_reply_to_account_id` ≠ own account) |
+| `"self_thread_reply"` | Replies to the poster's own previous toot (thread continuations) |
+| `"direct"` | Direct messages (`visibility == "direct"`) |
+| `"private"` | Followers-only toots (`visibility == "private"`) |
+| `"unlisted"` | Toots excluded from public timelines (`visibility == "unlisted"`) |
+| `"content_warning"` | Toots with a non-empty content warning (`spoiler_text`) |
+| `"mention"` | Toots that @-mention at least one other account |
 
 An empty list rejects nothing. Multiple values may be combined.
+
+### `"reply"` and `"self_thread_reply"` semantics
+
+`"reply"` and `"self_thread_reply"` are independent values that split reply handling:
+
+- `"reply"` — skips replies to **other** accounts. Use this to suppress conversational responses.
+- `"self_thread_reply"` — skips replies to the **poster's own** previous toot. Use this to suppress thread continuations.
+
+A user who wants to cross-post thread continuations while suppressing conversational replies uses `"reply"` alone. A user who wants to skip all replies uses both values.
+
+```toml
+# Skip conversational replies; keep self-thread continuations:
+skip_content_types = ["reply", "private", "direct"]
+
+# Skip all replies:
+skip_content_types = ["reply", "self_thread_reply"]
+```
+
+### Migration note
+
+Before this feature, all reply toots were excluded at the Mastodon API level. After upgrading, reply toots enter the pipeline and are evaluated by `skip_content_types`. Users who relied on the implicit reply exclusion and want to preserve that behavior should add `"reply"` and `"self_thread_reply"` to their `skip_content_types`.
+
+### Visibility and boosts
+
+For boosts, visibility is read from the **original** toot. A boost of a `"private"` toot is treated as private content and will be rejected when `"private"` is in `skip_content_types`.
 
 ---
 

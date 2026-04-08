@@ -39,6 +39,20 @@ def evaluate_filters(post: UnifiedPost, cfg: FilterConfig) -> FilterResult:
             return FilterResult(passed=False, reason="skip_content_type: media_only")
         if "reblog" in cfg.skip_content_types and post.is_reblog:
             return FilterResult(passed=False, reason="skip_content_type: reblog")
+        if "reply" in cfg.skip_content_types and post.is_reply:
+            return FilterResult(passed=False, reason="skip_content_type: reply")
+        if "self_thread_reply" in cfg.skip_content_types and post.is_self_thread_reply:
+            return FilterResult(passed=False, reason="skip_content_type: self_thread_reply")
+        if "direct" in cfg.skip_content_types and post.visibility == "direct":
+            return FilterResult(passed=False, reason="skip_content_type: direct")
+        if "private" in cfg.skip_content_types and post.visibility == "private":
+            return FilterResult(passed=False, reason="skip_content_type: private")
+        if "unlisted" in cfg.skip_content_types and post.visibility == "unlisted":
+            return FilterResult(passed=False, reason="skip_content_type: unlisted")
+        if "content_warning" in cfg.skip_content_types and post.has_content_warning:
+            return FilterResult(passed=False, reason="skip_content_type: content_warning")
+        if "mention" in cfg.skip_content_types and post.has_mention:
+            return FilterResult(passed=False, reason="skip_content_type: mention")
 
     # require_hashtags check (at least one must match; empty = post all)
     if cfg.require_hashtags:

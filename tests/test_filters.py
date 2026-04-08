@@ -258,6 +258,116 @@ class TestUnifiedPostNewFields:
         assert post.has_mention is True
 
 
+class TestExtendedContentTypeFilters:
+    """WU-3: 7 new skip_content_types branches."""
+
+    # --- reply ---
+    def test_skip_reply(self):
+        post = make_post(is_reply=True)
+        cfg = FilterConfig(skip_content_types=["reply"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+        assert result.reason == "skip_content_type: reply"
+
+    def test_skip_reply_passes_self_thread(self):
+        # The collector enforces mutual exclusion: is_self_thread_reply=True implies
+        # is_reply=False. This test uses the correct real-world state and guards against
+        # the "reply" filter being accidentally widened to also catch self-thread posts.
+        post = make_post(is_self_thread_reply=True)  # is_reply=False (collector invariant)
+        cfg = FilterConfig(skip_content_types=["reply"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is True
+
+    def test_skip_reply_not_configured(self):
+        post = make_post(is_reply=True)
+        cfg = FilterConfig(skip_content_types=[])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is True
+
+    # --- self_thread_reply ---
+    def test_skip_self_thread_reply(self):
+        post = make_post(is_self_thread_reply=True)
+        cfg = FilterConfig(skip_content_types=["self_thread_reply"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+        assert result.reason == "skip_content_type: self_thread_reply"
+
+    def test_skip_self_thread_passes_other_reply(self):
+        post = make_post(is_reply=True)
+        cfg = FilterConfig(skip_content_types=["self_thread_reply"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is True
+
+    # --- both reply types ---
+    def test_skip_all_replies_catches_other(self):
+        post = make_post(is_reply=True)
+        cfg = FilterConfig(skip_content_types=["reply", "self_thread_reply"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+
+    def test_skip_all_replies_catches_self(self):
+        post = make_post(is_self_thread_reply=True)
+        cfg = FilterConfig(skip_content_types=["reply", "self_thread_reply"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+
+    # --- visibility ---
+    def test_skip_private(self):
+        post = make_post(visibility="private")
+        cfg = FilterConfig(skip_content_types=["private"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+        assert result.reason == "skip_content_type: private"
+
+    def test_skip_private_passes_public(self):
+        post = make_post(visibility="public")
+        cfg = FilterConfig(skip_content_types=["private"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is True
+
+    def test_skip_direct(self):
+        post = make_post(visibility="direct")
+        cfg = FilterConfig(skip_content_types=["direct"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+        assert result.reason == "skip_content_type: direct"
+
+    def test_skip_unlisted(self):
+        post = make_post(visibility="unlisted")
+        cfg = FilterConfig(skip_content_types=["unlisted"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+        assert result.reason == "skip_content_type: unlisted"
+
+    # --- content_warning ---
+    def test_skip_content_warning(self):
+        post = make_post(has_content_warning=True)
+        cfg = FilterConfig(skip_content_types=["content_warning"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+        assert result.reason == "skip_content_type: content_warning"
+
+    def test_skip_content_warning_passes_no_cw(self):
+        post = make_post(has_content_warning=False)
+        cfg = FilterConfig(skip_content_types=["content_warning"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is True
+
+    # --- mention ---
+    def test_skip_mention(self):
+        post = make_post(has_mention=True)
+        cfg = FilterConfig(skip_content_types=["mention"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is False
+        assert result.reason == "skip_content_type: mention"
+
+    def test_skip_mention_passes_no_mention(self):
+        post = make_post(has_mention=False)
+        cfg = FilterConfig(skip_content_types=["mention"])
+        result = evaluate_filters(post, cfg)
+        assert result.passed is True
+
+
 class TestReblogFilter:
     def test_reblog_filtered_when_configured(self):
         post = make_post(is_reblog=True)

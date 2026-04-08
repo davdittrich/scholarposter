@@ -14,6 +14,11 @@ enabled = true
 
 [platforms.bluesky.filters]
 skip_hashtags = []
+# Valid values: "sensitive", "poll", "media_only", "reblog",
+# "reply" (replies to other accounts), "self_thread_reply" (replies to own account),
+# "direct", "private", "unlisted", "content_warning", "mention"
+# Example — skip conversational replies while keeping thread continuations:
+# skip_content_types = ["reply", "private", "direct"]
 skip_content_types = []
 require_hashtags = []
 
@@ -31,6 +36,11 @@ enabled = true
 
 [platforms.linkedin.filters]
 skip_hashtags = []
+# Valid values: "sensitive", "poll", "media_only", "reblog",
+# "reply" (replies to other accounts), "self_thread_reply" (replies to own account),
+# "direct", "private", "unlisted", "content_warning", "mention"
+# Example — skip conversational replies while keeping thread continuations:
+# skip_content_types = ["reply", "private", "direct"]
 skip_content_types = []
 require_hashtags = []
 
