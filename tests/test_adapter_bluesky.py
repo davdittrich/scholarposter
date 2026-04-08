@@ -3,7 +3,10 @@ import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch, call
 from scholarposter.adapters.base import BaseAdapter
-from scholarposter.adapters.bluesky import BlueskyAdapter, parse_mentions, parse_urls, parse_tags, chunk_text
+from scholarposter.adapters.bluesky import (
+    BlueskyAdapter, parse_mentions, parse_urls, parse_tags, chunk_text,
+    _BRAND_SYMBOL, _BRAND_URL, _append_brand,
+)
 from scholarposter.models import UnifiedPost, MediaAttachment, LinkEnrichment, PostStatus
 from scholarposter.config import MediaConfig
 
@@ -630,7 +633,7 @@ class TestBlueskyAdapterHashtagRules:
 
         call_args = mock_client.com.atproto.repo.create_record.call_args
         record = call_args[1]["record"] if call_args[1] else call_args[0][0].record
-        assert record.text == "Plain post"
+        assert record.text == f"Plain post {_BRAND_SYMBOL}"
 
 
 class TestCardDescriptionInEmbed:
@@ -875,3 +878,154 @@ class TestThreadRollback:
         result = adapter.post(post)
         assert result.status == PostStatus.FAILED
         mock_client.com.atproto.repo.delete_record.assert_not_called()
+
+
+class TestBrandLink:
+    @pytest.fixture
+    def mock_client(self):
+        client = MagicMock()
+        client.me = MagicMock()
+        client.me.did = "did:plc:testuser"
+        mock_record = MagicMock()
+        mock_record.uri = "at://did:plc:testuser/app.bsky.feed.post/abc123"
+        mock_record.cid = "bafy"
+        client.com.atproto.repo.create_record.return_value = mock_record
+        return client
+
+    @pytest.fixture
+    def adapter(self, mock_client):
+        return BlueskyAdapter(client=mock_client)
+
+    # --- _append_brand unit tests (no mock needed) ---
+
+    def test_symbol_appended_to_single_chunk(self):
+        chunks, appended = _append_brand(["Hello world"])
+        assert appended is True
+        assert chunks == [f"Hello world {_BRAND_SYMBOL}"]
+
+    def test_symbol_appended_to_last_chunk_only(self):
+        chunks, appended = _append_brand(["chunk one 1/2", "chunk two 2/2"])
+        assert appended is True
+        assert _BRAND_SYMBOL in chunks[-1]
+        assert _BRAND_SYMBOL not in chunks[0]
+
+    def test_symbol_omitted_when_no_room(self):
+        full = "a" * 300
+        result_chunks, appended = _append_brand([full])
+        assert appended is False
+        assert result_chunks == [full]
+
+    def test_content_symbol_not_linked_when_no_room(self):
+        """When content already contains ⚗️ and the chunk is full,
+        brand_appended is False so no facet is built — the content
+        occurrence is not incorrectly linked to GitHub.
+        """
+        # 299 graphemes of 'a' + ⚗️ = 300 graphemes exactly; no room to append
+        content = "a" * 299 + _BRAND_SYMBOL
+        result_chunks, appended = _append_brand([content])
+        assert appended is False
+        assert result_chunks == [content]
+
+    # --- Integration tests (use adapter + mock_client) ---
+
+    def test_brand_facet_byte_range_correct(self, adapter, mock_client):
+        """Brand facet byte_start/byte_end correctly locate ⚗️ in the chunk."""
+        result = adapter.post(make_post("Short post"))
+        assert result.status == PostStatus.POSTED
+        record = mock_client.com.atproto.repo.create_record.call_args.args[0].record
+        brand_facets = [
+            f for f in (record.facets or [])
+            if any(hasattr(feat, "uri") and feat.uri == _BRAND_URL
+                   for feat in f.features)
+        ]
+        assert len(brand_facets) == 1
+        facet = brand_facets[0]
+        symbol_bytes = _BRAND_SYMBOL.encode("utf-8")
+        extracted = record.text.encode("utf-8")[
+            facet.index.byte_start: facet.index.byte_end
+        ]
+        assert extracted == symbol_bytes
+
+    def test_brand_facet_uri_is_github(self, adapter, mock_client):
+        adapter.post(make_post("Short post"))
+        record = mock_client.com.atproto.repo.create_record.call_args.args[0].record
+        uris = [feat.uri for f in (record.facets or [])
+                for feat in f.features if hasattr(feat, "uri")]
+        assert _BRAND_URL in uris
+
+    def test_brand_url_never_in_chunk_text(self, adapter, mock_client):
+        """Brand URL must not appear in post text — only in the facet.
+        If it did, parse_urls() would create a duplicate facet and the link
+        card logic could embed a GitHub card over the post's content link.
+        """
+        adapter.post(make_post("Short post"))
+        for call_item in mock_client.com.atproto.repo.create_record.call_args_list:
+            assert _BRAND_URL not in call_item.args[0].record.text
+
+    def test_brand_does_not_produce_link_card_embed(self, adapter, mock_client):
+        """A post with no content links must have embed=None.
+        The brand link uses a facet only — it must not trigger an embed.
+        """
+        adapter.post(make_post("Short post"))
+        record = mock_client.com.atproto.repo.create_record.call_args.args[0].record
+        assert record.embed is None
+
+    def test_brand_does_not_displace_content_link_card(self, mock_client):
+        """When a post has a content link, the embed must be that content URL.
+        The brand must not displace it or corrupt it with the GitHub URL.
+        """
+        link = LinkEnrichment(
+            original_url="https://example.com/paper",
+            resolved_url="https://example.com/paper",
+            title="Test Paper",
+        )
+        post = make_post("Check this paper", links=[link])
+        adapter = BlueskyAdapter(client=mock_client, media_config=MediaConfig(enabled=True))
+        adapter.post(post)
+        record = mock_client.com.atproto.repo.create_record.call_args.args[0].record
+        assert record.embed is not None
+        assert record.embed.external.uri == "https://example.com/paper"
+        assert record.embed.external.uri != _BRAND_URL
+
+    def test_brand_on_last_chunk_of_thread(self, mock_client):
+        """For a multi-chunk thread, the brand facet appears only on the last chunk."""
+        long_text = "word " * 70  # ~350 graphemes → at least 2 chunks
+        post = make_post(long_text)
+        adapter = BlueskyAdapter(client=mock_client)
+        adapter.post(post)
+        calls = mock_client.com.atproto.repo.create_record.call_args_list
+        assert len(calls) >= 2
+
+        def has_brand_facet(record):
+            return any(
+                hasattr(feat, "uri") and feat.uri == _BRAND_URL
+                for f in (record.facets or [])
+                for feat in f.features
+            )
+
+        assert has_brand_facet(calls[-1].args[0].record)
+        for call_item in calls[:-1]:
+            assert not has_brand_facet(call_item.args[0].record)
+
+    def test_brand_symbol_at_end_of_text(self, adapter, mock_client):
+        """Integration: the brand symbol is the final character of the posted text."""
+        adapter.post(make_post("Short post"))
+        record = mock_client.com.atproto.repo.create_record.call_args.args[0].record
+        assert record.text.endswith(_BRAND_SYMBOL)
+
+    def test_natural_symbol_in_content_not_linked(self, mock_client):
+        """When post content contains ⚗️ and the chunk is full (300 graphemes),
+        brand_appended=False must prevent any brand facet being sent to the API.
+        """
+        # 299 'a' graphemes + ⚗️ = 300 graphemes; no room to append the brand suffix
+        content = "a" * 299 + _BRAND_SYMBOL
+        post = make_post(content)
+        adapter = BlueskyAdapter(client=mock_client)
+        adapter.post(post)
+        record = mock_client.com.atproto.repo.create_record.call_args.args[0].record
+        brand_facets = [
+            f for f in (record.facets or [])
+            if any(hasattr(feat, "uri") and feat.uri == _BRAND_URL
+                   for feat in f.features)
+        ]
+        assert len(brand_facets) == 0

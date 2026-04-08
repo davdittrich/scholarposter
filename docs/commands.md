@@ -30,6 +30,7 @@ Behavior:
 - On failure: sends notification, records error in state
 - Retries transient errors (HTTP 429/5xx) up to 2 times with backoff
 - If a multi-chunk Bluesky thread fails mid-way, scholarposter deletes already-posted chunks before returning the failure. The post is marked failed in state and retried on the next run.
+- Appends ⚗️ to every Bluesky post, hyperlinked to the scholarposter GitHub repository.
 
 ### `retry`
 
