@@ -1033,6 +1033,9 @@ def sync_engagement_cmd(
         typer.echo(f"Config error: {e}", err=True)
         raise typer.Exit(code=1)
 
+    env_path = Path(config).parent.resolve() / ".env"
+    load_dotenv(dotenv_path=env_path)
+
     if not cfg.audit.enabled or cfg.audit.resolved_file is None:
         typer.echo("Audit logging is disabled. Set [audit] enabled = true in config.toml.", err=True)
         raise typer.Exit(code=1)

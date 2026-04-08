@@ -189,7 +189,7 @@ scholarposter sync-engagement --dry-run       # preview without writing
 scholarposter sync-engagement --force         # re-sync already-synced posts
 ```
 
-Requires `BLUESKY_EMAIL` and `BLUESKY_PASSWORD` environment variables.
+Requires Bluesky credentials in `.env` (`BLUESKY_EMAIL` and `BLUESKY_PASSWORD`).
 Only Bluesky records are synced; LinkedIn records are skipped.
 Prints `Synced engagement for N posts (M skipped, K errors).`
 
