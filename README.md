@@ -201,6 +201,16 @@ scholarposter config validate
 
 Prints parsed config with sensitive fields redacted.
 
+### Updating configuration after upgrades
+
+```bash
+scholarposter config-update            # append new keys (commented out) to config.toml
+scholarposter config-update --dry-run  # preview additions without writing
+scholarposter config-update --diff     # show unified diff of proposed changes
+```
+
+Appends any keys present in the shipped example but absent from your `config.toml`, as commented-out lines at EOF. Safe to run repeatedly — each key is appended at most once.
+
 ---
 
 ## Global flags
@@ -344,6 +354,7 @@ scholarposter/
 | Images downsampled | Source too large | Expected — Bluesky enforces ~976 KB blob limit |
 | `ModuleNotFoundError` | Wrong Python binary | Use full path: `.venv/bin/scholarposter` |
 | `Config not found` | Missing config.toml | Copy `config.toml.example` to `config.toml` |
+| After upgrade, new features don't appear in config | Missing config keys | Run `scholarposter config-update` to append new options |
 | `Missing BLUESKY_EMAIL env var` | .env not loaded | Verify `.env` exists and has credentials |
 | `Mastodon token revoked` | App authorization removed | Re-run `scholarposter auth mastodon`; see [docs/auth-mastodon.md](docs/auth-mastodon.md) |
 

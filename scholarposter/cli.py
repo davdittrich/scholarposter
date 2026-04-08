@@ -1,10 +1,14 @@
 """CLI entry point for scholarposter."""
 from __future__ import annotations
 
+import difflib
+import importlib.metadata
+import importlib.resources
 import os
 import re
 import sys
 import time
+import tomllib
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -646,6 +650,201 @@ def _print_masked_config(data: Any, indent: int = 0) -> None:
                         typer.echo(f"{prefix}{bullet}{key}: {value}")
             else:
                 typer.echo(f"{prefix}- {item}")
+
+
+# ---------------------------------------------------------------------------
+# config-update helpers (US-017)
+# ---------------------------------------------------------------------------
+
+def _load_example_config() -> tuple[str, dict]:
+    """Load shipped config.example.toml. Returns (raw_text, parsed_dict)."""
+    resource = importlib.resources.files("scholarposter.data").joinpath("config.example.toml")
+    raw = resource.read_bytes().decode("utf-8")
+    return raw, tomllib.loads(raw)
+
+
+def _collect_missing_keys(
+    user: dict, example: dict, prefix: str = ""
+) -> list[tuple[str, str, Any]]:
+    """Return [(section_path, key, value)] for all leaf keys in example absent from user."""
+    missing: list[tuple[str, str, Any]] = []
+    for k, v in example.items():
+        new_prefix = k if not prefix else f"{prefix}.{k}"
+        if isinstance(v, dict):
+            user_sub = user.get(k, {}) if isinstance(user, dict) else {}
+            missing.extend(_collect_missing_keys(user_sub, v, new_prefix))
+        else:
+            if not isinstance(user, dict) or k not in user:
+                missing.append((prefix, k, v))
+    return missing
+
+
+def _is_key_commented(raw: str, section: str, key: str) -> bool:
+    """Return True if '# key =' appears within this section's config-update block(s).
+
+    Scans from the first matching sentinel to EOF, but stops at any sentinel
+    belonging to a *different* section to prevent cross-section false positives.
+    Multiple same-section sentinels (cross-version appends) are scanned through.
+    """
+    sentinel = f"# --- config-update: {section} ---"
+    idx = raw.find(sentinel)
+    if idx == -1:
+        return False
+    region = raw[idx:]
+    for line in region.splitlines():
+        stripped = line.strip()
+        # Stop at a different section's sentinel to avoid cross-section matches
+        if (stripped.startswith("# --- config-update:") and stripped != sentinel):
+            break
+        if stripped.startswith(f"# {key} =") or stripped.startswith(f"# {key}="):
+            return True
+    return False
+
+
+def _get_config_update_version() -> str:
+    try:
+        return importlib.metadata.version("scholarposter")
+    except importlib.metadata.PackageNotFoundError:
+        return "dev"
+
+
+def _format_toml_value(v: Any) -> str:
+    """Return a TOML-valid string representation of v (no quoting of non-strings)."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    elif isinstance(v, int):
+        return str(v)
+    elif isinstance(v, float):
+        return str(v)
+    elif isinstance(v, str):
+        escaped = v.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    elif isinstance(v, list):
+        items = ", ".join(_format_toml_value(item) for item in v)
+        return f"[{items}]"
+    else:
+        escaped = str(v).replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+
+
+def _redact_toml_value(key: str, formatted_value: str) -> str:
+    """Replace sensitive field values with '<redacted>' (TOML-quoted)."""
+    if key in _SENSITIVE_FIELDS:
+        return '"<redacted>"'
+    return formatted_value
+
+
+def _section_absent(user_parsed: dict, section_path: str) -> bool:
+    """Return True if the section path is not present in user_parsed."""
+    parts = section_path.split(".")
+    d: Any = user_parsed
+    for part in parts:
+        if not isinstance(d, dict) or part not in d:
+            return True
+        d = d[part]
+    return False
+
+
+def _build_append_block(
+    missing: list[tuple[str, str, Any]],
+    user_raw: str,
+    user_parsed: dict,
+    version: str,
+) -> str:
+    """Build the text block to append to config.toml for all missing keys."""
+    if not missing:
+        return ""
+
+    # Group by section_path, preserving order
+    sections: dict[str, list[tuple[str, Any]]] = {}
+    for section_path, key, value in missing:
+        if section_path not in sections:
+            sections[section_path] = []
+        sections[section_path].append((key, value))
+
+    lines: list[str] = [""]  # leading blank line separator
+
+    for section_path, keys in sections.items():
+        remaining = [
+            (k, v) for k, v in keys
+            if not _is_key_commented(user_raw, section_path, k)
+        ]
+        if not remaining:
+            continue
+
+        absent = _section_absent(user_parsed, section_path)
+        lines.append(f"# --- config-update: {section_path} ---")
+        lines.append(f"# Added by scholarposter config-update {version} — {section_path}")
+        if absent:
+            lines.append(f"# [{section_path}]")
+        for k, v in remaining:
+            lines.append(f"# {k} = {_redact_toml_value(k, _format_toml_value(v))}")
+
+    if len(lines) <= 1:
+        return ""
+    return "\n".join(lines)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Write content atomically via a .tmp file + rename."""
+    tmp = path.parent / (path.name + ".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.rename(tmp, path)
+
+
+@app.command(name="config-update")
+def config_update_cmd(
+    config: Path = typer.Option(Path("config.toml"), "--config"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    diff: bool = typer.Option(False, "--diff"),
+) -> None:
+    """Append missing config keys (commented out) from config.example.toml."""
+    try:
+        example_raw, example_parsed = _load_example_config()
+    except FileNotFoundError:
+        typer.echo("Shipped example config not found — reinstall the package", err=True)
+        raise typer.Exit(code=1)
+
+    if config.exists():
+        with open(config, "rb") as f:
+            user_parsed: dict = tomllib.load(f)
+        user_raw = config.read_text(encoding="utf-8")
+    else:
+        user_parsed = {}
+        user_raw = ""
+
+    version = _get_config_update_version()
+    missing = _collect_missing_keys(user_parsed, example_parsed)
+    block = _build_append_block(missing, user_raw, user_parsed, version)
+
+    if not block:
+        typer.echo("config.toml is up to date")
+        return
+
+    new_content = user_raw + block
+
+    if diff or dry_run:
+        if diff:
+            old_lines = user_raw.splitlines(keepends=True)
+            new_lines = new_content.splitlines(keepends=True)
+            for line in difflib.unified_diff(
+                old_lines, new_lines,
+                fromfile="config.toml", tofile="config.toml (updated)",
+                lineterm="",
+            ):
+                typer.echo(line)
+        else:
+            typer.echo(block)
+        return
+
+    _atomic_write_text(config, new_content)
+    key_count = sum(
+        1 for line in block.splitlines()
+        if line.startswith("# ") and " = " in line
+    )
+    typer.echo(f"Appended {key_count} missing key(s) to {config}")
 
 
 @app.command()

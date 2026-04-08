@@ -131,6 +131,24 @@ Print parsed configuration with sensitive fields (credentials, tokens) redacted.
 scholarposter config validate
 ```
 
+### `config-update`
+
+Append missing config keys (commented out) to an existing `config.toml` without overwriting user values. Safe to run after every package upgrade.
+
+```bash
+scholarposter config-update            # append new keys (commented out) to config.toml
+scholarposter config-update --dry-run  # preview additions without writing
+scholarposter config-update --diff     # show unified diff of proposed changes
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--config` | `config.toml` | Path to config file |
+| `--dry-run` | off | Print additions without writing |
+| `--diff` | off | Show unified diff without writing |
+
+Reads `config.toml` and the shipped `config.example.toml`, then appends any missing keys as commented-out lines at EOF. Sensitive fields (`access_token`, `smtp_password`, etc.) are shown as `"<redacted>"`. Running twice is safe — each key is appended at most once.
+
 ---
 
 ## Academic Tools
