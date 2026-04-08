@@ -53,10 +53,10 @@ _DEFAULT_RANKING = DiscoveryRankingConfig(oa_weight=1.2, recency_half_life_years
 
 class TestScore:
     def test_velocity_times_oa_times_recency(self):
-        """score = (cited_by_count / max(1, age)) * oa_factor * exp(-0.693 * age / half_life)"""
+        """score = (cited_by_count / max(1, age)) * oa_factor * exp(-ln(2) * age / half_life)"""
         from scholarposter.discovery.ranking import score
         p = _paper(cited_by_count=10, age_years=2.0, is_oa=False)
-        expected = (10.0 / 2.0) * 1.0 * math.exp(-0.693 * 2.0 / 2.0)
+        expected = (10.0 / 2.0) * 1.0 * math.exp(-math.log(2) * 2.0 / 2.0)
         assert abs(score(p, _DEFAULT_RANKING) - expected) < 1e-9
 
     def test_oa_weight_applied(self):
