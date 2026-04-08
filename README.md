@@ -143,7 +143,7 @@ Traverse the OpenAlex citation graph using your bibliography as seed DOIs:
 scholarposter discover                          # all modes from config
 scholarposter discover --mode cited-by          # papers that cite your work
 scholarposter discover --mode cites             # papers your work references
-scholarposter discover --mode all               # cited-by + cites combined
+scholarposter discover --mode all               # cited-by + cites + co-cited
 scholarposter discover --since 2025-01-01       # papers from 2025 onwards
 scholarposter discover --limit 20               # top 20 suggestions
 scholarposter discover --json                   # JSON output
@@ -160,9 +160,10 @@ decay (configurable via `[discovery.ranking]`).  Duplicate DOIs from different
 modes are deduplicated, keeping the highest-scoring copy.
 
 To receive an email digest, set `digest_email` in `[discovery]` and pass
-`--email-digest`.  The digest is sent via SMTP (defaults to `localhost:25`; uses
-the first `[[notifications.backends]]` entry of `type = "email"` if configured).
-Subject: `scholarposter discovery digest — YYYY-MM-DD: N new candidates`.
+`--email-digest`.  Set `digest_auto = true` to send the digest on every non-empty
+run without the flag.  The digest is sent via SMTP (defaults to `localhost:25`;
+uses the first `[[notifications.backends]]` entry of `type = "email"` if
+configured).  Subject: `scholarposter discovery digest — YYYY-MM-DD: N new candidates`.
 
 ### Querying the audit log
 

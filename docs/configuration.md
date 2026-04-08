@@ -95,7 +95,7 @@ Fallback is only to cheaper/simpler backends (no wrap-around).
 | `timeout_seconds` | `60` | Inference HTTP timeout |
 | `ctx_size` | `8192` | Context window for auto-loaded models (tokens) |
 | `load_timeout_seconds` | `180` | Max seconds for model loading |
-| `preferred_models` | (see example) | Ordered preference list for auto-load |
+| `preferred_models` | (see [summarization.md](summarization.md#lemonade-local-llm--preferred)) | Ordered model preference for auto-load; the first downloaded model in the list is selected |
 
 ### `[enrichment.summarization.ollama]`
 
@@ -116,8 +116,8 @@ Fallback is only to cheaper/simpler backends (no wrap-around).
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Follow redirects to resolve shortened URLs |
-| `timeout_seconds` | `10` | |
-| `max_redirects` | `5` | |
+| `timeout_seconds` | `10` | HTTP timeout per redirect step, in seconds |
+| `max_redirects` | `5` | Maximum redirect hops before giving up |
 
 ## `[enrichment.progressive]`
 
@@ -187,7 +187,11 @@ Port 465 uses implicit TLS (SMTP_SSL). Other ports use capability-based STARTTLS
 State files are resolved relative to the directory containing `config.toml`, not the
 working directory. This ensures all commands (`run`, `retry`, `status`, `bibliography`,
 `enrich`, `discover`) read and write the same files regardless of where you invoke
-scholarposter from.
+scholarposter from. All state files are written atomically (write to a temp file, then
+rename) and created with `0o600` permissions; no partial write is visible to a
+concurrent reader. A fifth file, `discovery_cache.json`, appears in the same directory
+after the first `discover` run; it is safe to delete and rebuilds automatically, at
+the cost of additional OpenAlex API calls.
 
 ---
 
@@ -215,7 +219,7 @@ before the `discover` command runs traversal.
 |-----|---------|-------------|
 | `enabled` | `false` | Enable citation graph discovery |
 | `sources` | `["openalex"]` | Data sources for graph traversal |
-| `modes` | `["cited-by", "cites"]` | Traversal modes to run by default; valid values: `"cited-by"`, `"cites"`, `"all"` |
+| `modes` | `["cited-by", "cites"]` | Traversal modes to run by default; valid values: `"cited-by"`, `"cites"`, `"co-cited"`, `"all"`. `"all"` runs all three modes. |
 | `limit` | `20` | Maximum number of candidates to return |
 | `digest_email` | (none) | Email address for discovery digests; required when `--email-digest` is passed to `discover` |
 | `digest_auto` | `false` | Send a digest email automatically on every `discover` run when results are non-empty. Requires `digest_email` to be set; logs a warning and skips if absent. |

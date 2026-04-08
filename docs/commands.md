@@ -282,3 +282,27 @@ scholarposter audit [--platform PLATFORM] [--since DATE] [--until DATE] [--statu
 **Prerequisite:** `[audit] enabled = true` must be set in `config.toml`. The command exits with an error if audit logging is disabled.
 
 The default tabular output shows: timestamp, toot ID, platform, status, DOI, LLM backend used, summary character count, and Bluesky engagement (likes and reposts, if synced).
+
+#### Audit record schema
+
+Each line in `audit.jsonl` is a JSON object with exactly 17 fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | ISO 8601 string | UTC time of the cross-post attempt |
+| `toot_id` | string | Mastodon toot ID |
+| `platform` | string | `"bluesky"` or `"linkedin"` |
+| `status` | string | `"posted"`, `"failed"`, `"skipped"`, or `"dry_run"` |
+| `enrichment_path` | list[string] | Enrichment stages applied to the first link |
+| `pdf_stage_skipped` | bool | `true` when stage 2.5 skipped the PDF download (Crossref abstract was sufficient) |
+| `llm_backend_used` | string or null | Summarization backend used (`"gemini"`, `"lemonade"`, `"ollama"`, `"extractive"`); null when the toot had no link |
+| `abstract_chars` | int or null | Character count of the Crossref abstract, when available |
+| `summary_chars` | int or null | Character count of the generated summary, when available |
+| `doi` | string or null | DOI of the first link, when resolved |
+| `link_type` | string or null | `"doi"`, `"pdf"`, or `"web"`; null when no link |
+| `post_url` | string or null | URL of the created post on the target platform |
+| `bluesky_likes` | int or null | Like count; null until `sync-engagement` runs |
+| `bluesky_reposts` | int or null | Repost count; null until `sync-engagement` runs |
+| `engagement_synced_at` | ISO 8601 or null | Last sync timestamp; null until `sync-engagement` runs |
+| `hashtags` | list[string] | Hashtags present in the toot |
+| `chunk_count` | int or null | Bluesky chunks posted (null for LinkedIn) |
