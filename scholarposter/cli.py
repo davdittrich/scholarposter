@@ -32,6 +32,19 @@ app.add_typer(auth_app, name="auth")
 
 VALID_PLATFORMS = {"bluesky", "linkedin", "all"}
 
+# FR-98: URL regex for extracting numeric toot ID from Mastodon URLs.
+# Matches both /@<user>/<id> and /users/<user>/statuses/<id> formats.
+_TOOT_URL_RE = re.compile(
+    r"https?://[^/]+/(?:@[^/]+|users/[^/]+/statuses)/(\d+)"
+)
+
+_SET_WATERMARK_USAGE = (
+    "Usage:\n"
+    "  scholarposter set-watermark --toot-id 113456789012345678\n"
+    "  scholarposter set-watermark --toot-url 'https://mastodon.social/@you/113456789012345678'\n"
+    "  scholarposter set-watermark --date 2026-01-15"
+)
+
 _REDACT_BEARER = re.compile(r"Bearer \S+")
 _REDACT_SECRETS = re.compile(
     r"(password|secret|token|api_key)=[^\s&]+", re.IGNORECASE
@@ -1100,3 +1113,159 @@ def sync_engagement_cmd(
     )
     if errors:
         raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# US-016: set-watermark — helper and command
+# ---------------------------------------------------------------------------
+
+def _find_watermark_for_date(
+    mastodon: Mastodon,
+    account_id: int,
+    target_date: date,
+) -> Optional[int]:
+    """Page newest-first through account_statuses to find the last toot before midnight UTC.
+
+    Returns the toot ID (int) of the most recent toot created strictly before
+    midnight UTC on target_date, or None if no such toot exists within 500 pages.
+
+    Two distinct None paths:
+    - Empty page: account has no toots before the cutoff (or account is empty).
+    - 500-page cap: 20,000+ toots exist but none before the cutoff date.
+    Both cause the caller to delete last_toot_id from state.
+    """
+    cutoff = datetime(
+        target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc
+    )
+    max_id: Optional[int] = None
+    for _ in range(500):  # hard cap: 500 pages × 40 toots = 20,000 toots
+        try:
+            kwargs: dict[str, Any] = {"limit": 40}
+            if max_id is not None:
+                kwargs["max_id"] = max_id
+            toots = mastodon.account_statuses(account_id, **kwargs)
+        except Exception as e:
+            logger.warning(f"set-watermark: API error during date lookup: {e}")
+            raise  # caller handles exit-1
+        if not toots:
+            return None  # empty page → no toot before cutoff
+        for toot in toots:
+            if toot["created_at"] < cutoff:
+                return int(toot["id"])
+        max_id = int(toots[-1]["id"])
+    return None  # 500-page cap reached without finding a toot before cutoff
+
+
+@app.command(name="set-watermark")
+def set_watermark_cmd(
+    config: Path = typer.Option(Path("config.toml"), "--config",
+        help="Path to config file."),
+    platform: str = typer.Option("all", "--platform",
+        help="Platform to update: bluesky, linkedin, or all."),
+    toot_id: Optional[int] = typer.Option(None, "--toot-id",
+        help="Toot ID to use as watermark (last-processed toot)."),
+    toot_url: Optional[str] = typer.Option(None, "--toot-url",
+        help="Toot URL; the numeric ID is extracted automatically."),
+    date_str: Optional[str] = typer.Option(None, "--date",
+        help="YYYY-MM-DD. Requires Mastodon credentials configured in config.toml."),
+    dry_run: bool = typer.Option(False, "--dry-run",
+        help="Print what would happen without writing state."),
+    yes: bool = typer.Option(False, "--yes", "-y",
+        help="Skip confirmation prompt."),
+    verbose: bool = typer.Option(False, "--verbose"),
+    quiet: bool = typer.Option(False, "--quiet"),
+) -> None:
+    """Set the last_toot_id watermark in state.json.
+
+    The next 'run' will process toots strictly after the watermark.
+    Exactly one of --toot-id, --toot-url, or --date is required.
+    """
+    setup_logging(level="DEBUG" if verbose else ("WARNING" if quiet else "INFO"))
+
+    # Validate: exactly one anchor flag required
+    anchor_count = sum(x is not None for x in [toot_id, toot_url, date_str])
+    if anchor_count != 1:
+        typer.echo(
+            f"Error: exactly one of --toot-id, --toot-url, or --date is required\n\n"
+            f"{_SET_WATERMARK_USAGE}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    # Validate platform
+    if platform not in VALID_PLATFORMS:
+        typer.echo("Error: --platform must be bluesky, linkedin, or all", err=True)
+        raise typer.Exit(code=2)
+
+    platforms_to_write = ["bluesky", "linkedin"] if platform == "all" else [platform]
+
+    # --- Load config once (needed for StateManager in all modes; mastodon in --date mode) ---
+    try:
+        cfg = load_config(config)
+    except Exception as e:
+        typer.echo(f"Config error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    state_dir = config.parent.resolve()
+    state_mgr = StateManager(
+        state_dir=state_dir,
+        state_file=Path(cfg.state.state_file).name,
+    )
+
+    # --- Resolve the watermark ID ---
+    resolved_id: Optional[int]
+
+    if toot_id is not None:
+        resolved_id = toot_id
+
+    elif toot_url is not None:
+        m = _TOOT_URL_RE.match(toot_url)
+        if not m:
+            typer.echo(f"Cannot parse toot ID from URL: {toot_url}", err=True)
+            raise typer.Exit(code=2)
+        resolved_id = int(m.group(1))
+
+    else:  # date_str
+        try:
+            target = datetime.strptime(date_str, "%Y-%m-%d").date()  # type: ignore[arg-type]
+        except ValueError:
+            typer.echo(
+                f"Invalid date format: {date_str!r}. Expected YYYY-MM-DD", err=True
+            )
+            raise typer.Exit(code=2)
+
+        mastodon_client = _build_mastodon_client(cfg)
+        account_id = mastodon_client.me()["id"]
+        try:
+            resolved_id = _find_watermark_for_date(mastodon_client, account_id, target)
+        except Exception as e:
+            typer.echo(f"Error fetching timeline: {e}", err=True)
+            raise typer.Exit(code=1)
+
+    # --- Dry-run: print and return without touching state or lock ---
+    if dry_run:
+        for plat in platforms_to_write:
+            typer.echo(f"[dry-run] Would set {plat} last_toot_id = {resolved_id}")
+        return
+
+    # --- Confirmation prompt ---
+    if not yes:
+        for plat in platforms_to_write:
+            confirmed = typer.confirm(
+                f"Set watermark for {plat}: last_toot_id = {resolved_id}\n"
+                f"The next 'run' will process toots after this. Continue?"
+            )
+            if not confirmed:
+                return
+
+    # --- Acquire lock ---
+    if not state_mgr.acquire_lock():
+        typer.echo("Another scholarposter process is running", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        for plat in platforms_to_write:
+            state_mgr.update_platform_state(plat, PlatformState(last_toot_id=resolved_id))
+            typer.echo(f"Set {plat} last_toot_id = {resolved_id}")
+    finally:
+        state_mgr.release_lock()
