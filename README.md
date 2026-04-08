@@ -1,20 +1,23 @@
-# scholarposter
+# scholarposter ⚗️
 
-Cross-post Mastodon toots to Bluesky and LinkedIn with automatic enrichment,
-summarization, and paper discovery.
+scholarposter cross-posts from Mastodon to Bluesky and LinkedIn — resolving DOIs,
+fetching Crossref abstracts, and building link cards automatically.
 
 ## Features
 
-- **Cross-post** with DOI/abstract enrichment, link cards, and media
+- **Cross-post** to Bluesky and LinkedIn with DOI metadata, link cards, and media attachments
 - **Thread** long posts on Bluesky (grapheme-safe, AT Protocol compliant)
 - **Filter** by hashtag, content type, or reblog status per platform
 - **Summarize** shared papers into link card descriptions via Gemini, Lemonade, Ollama, or extractive fallback
-- **Export** a BibTeX bibliography of everything you've shared
+- **Export** a BibTeX bibliography that grows automatically with each paper you share
 - **Enrich** any URL from the terminal — DOI, title, abstract, summary
 - **Discover** new papers matching your interests via OpenAlex
 - **Notify** on failure via ntfy, Signal, or email
 
 ## How it works
+
+Each `scholarposter run` picks up the oldest unprocessed Mastodon post, runs it through
+a five-stage enrichment pipeline, and posts to the configured platforms.
 
 ```mermaid
 flowchart TD
@@ -92,8 +95,8 @@ scholarposter run --platform bluesky   # single platform
 scholarposter run --dry-run            # simulate without posting
 ```
 
-Each invocation processes one toot (the oldest unprocessed). Schedule via cron to
-process the backlog continuously.
+Each invocation processes the oldest unprocessed post. Schedule via cron to work
+through your backlog automatically.
 
 ### Retrying a failed post
 
@@ -151,19 +154,19 @@ scholarposter discover --wide                   # full-length titles
 scholarposter discover --email-digest           # send digest to discovery.digest_email
 ```
 
-Requires `[discovery] enabled = true` in config.  Uses OpenAlex polite pool
-(set `etiquette_email` in `[enrichment.crossref]`).  Excludes papers already
-in your bibliography.
+Requires `[discovery] enabled = true` in config. Uses the OpenAlex polite pool;
+set `etiquette_email` in `[enrichment.crossref]` for priority access. Excludes
+papers already in `bibliography.json`.
 
 Results are ranked by a composite score: citation velocity × OA weight × recency
-decay (configurable via `[discovery.ranking]`).  Duplicate DOIs from different
+decay (configurable via `[discovery.ranking]`). Duplicate DOIs from different
 modes are deduplicated, keeping the highest-scoring copy.
 
 To receive an email digest, set `digest_email` in `[discovery]` and pass
-`--email-digest`.  Set `digest_auto = true` to send the digest on every non-empty
-run without the flag.  The digest is sent via SMTP (defaults to `localhost:25`;
-uses the first `[[notifications.backends]]` entry of `type = "email"` if
-configured).  Subject: `scholarposter discovery digest — YYYY-MM-DD: N new candidates`.
+`--email-digest`. Set `digest_auto = true` to send it automatically on every
+non-empty run. The digest uses SMTP (defaults to `localhost:25`; uses the first
+`[[notifications.backends]]` entry of `type = "email"` if configured).
+Subject: `scholarposter discovery digest — YYYY-MM-DD: N new candidates`.
 
 ### Querying the audit log
 
@@ -271,8 +274,7 @@ crontab -e
 */30 * * * * /home/user/scholarposter/.venv/bin/scholarposter run --config /home/user/scholarposter/config.toml >> /home/user/scholarposter/scholarposter.log 2>&1
 ```
 
-If using Gemini or Lemonade, add a PATH line at the top of your crontab so cron
-can find the binaries:
+Gemini and Lemonade require a `PATH` line at the top of your crontab:
 
 ```
 PATH=/usr/local/bin:/usr/bin:/bin:/home/user/.local/bin
