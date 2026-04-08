@@ -23,6 +23,8 @@ from scholarposter.models import BibliographyEntry, PlatformState, PostResult, P
 from scholarposter.notifications.base import BaseNotifier
 from scholarposter.notifications.ntfy import NtfyNotifier
 from scholarposter.auth.cli import auth_app
+from scholarposter.discovery.digest import format_table, send_digest
+from scholarposter.discovery.ranking import rank
 from scholarposter.state import StateManager
 
 app = typer.Typer(help="Mastodon cross-poster for academics.")
@@ -835,8 +837,7 @@ def discover(
         results = [p for p in results if p.year is None or p.year >= since_year]
 
     # Rank: deduplicate by DOI (highest score wins), sort descending, top N
-    from scholarposter.discovery.ranking import rank as _rank
-    unique = _rank(results, effective_cfg.ranking, limit)
+    unique = rank(results, effective_cfg.ranking, limit)
 
     if not unique:
         typer.echo("No new papers found matching your interests.")
@@ -848,9 +849,8 @@ def discover(
         return
 
     # Tabular output (120-col, 40-char title truncation unless --wide)
-    from scholarposter.discovery.digest import format_table as _format_table
     typer.echo(f"Paper Discovery — {len(unique)} suggestions\n")
-    typer.echo(_format_table(unique, wide=wide))
+    typer.echo(format_table(unique, wide=wide))
     typer.echo()
 
     # --email-digest
@@ -862,8 +862,6 @@ def discover(
                 err=True,
             )
             raise typer.Exit(code=1)
-        from datetime import date as _date
-        from scholarposter.discovery.digest import send_digest as _send_digest
         # Find SMTP backend from notifications config if available
         smtp_host, smtp_port, from_addr = "localhost", 25, "scholarposter@localhost"
         if cfg:
@@ -874,8 +872,8 @@ def discover(
                     from_addr = backend.from_addr or from_addr
                     break
         try:
-            _send_digest(
-                unique, effective_cfg, _date.today(),
+            send_digest(
+                unique, effective_cfg, date.today(),
                 smtp_host=smtp_host, smtp_port=smtp_port, from_addr=from_addr,
             )
             typer.echo(f"Digest sent to {disc_email}.")
