@@ -12,6 +12,7 @@ from scholarposter.models import MediaAttachment, UnifiedPost
 
 _URL_RE = re.compile(r'https?://[^\s<>"\']+')
 _EMOJI_RE = re.compile(r':[A-Za-z0-9_]+:')
+_KNOWN_VISIBILITIES = frozenset({"public", "unlisted", "private", "direct"})
 
 
 def strip_html(html: str) -> str:
@@ -144,6 +145,12 @@ class MastodonCollector:
         else:
             created_at = datetime.now(timezone.utc)
 
+        _in_reply_to_id = toot.get("in_reply_to_id")
+        _reply_account_id = toot.get("in_reply_to_account_id")
+        _own_account_id = toot.get("account", {}).get("id")
+        _raw_visibility = source.get("visibility", "public")
+        _visibility = _raw_visibility if _raw_visibility in _KNOWN_VISIBILITIES else "public"
+
         return UnifiedPost(
             source_id=str(toot["id"]),
             text=plain_text,
@@ -157,22 +164,13 @@ class MastodonCollector:
             urls=urls,
             is_sensitive=bool(source.get("sensitive", False)),
             has_poll=source.get("poll") is not None,
-            # is_reply/is_self_thread_reply: always read from outer toot, not source.
-            # For reblogs, the outer toot's in_reply_to_id is null, so boosts are
-            # never classified as replies — intentional.
-            is_reply=(
-                toot.get("in_reply_to_id") is not None
-                and toot.get("in_reply_to_account_id") != toot.get("account", {}).get("id")
-            ),
-            is_self_thread_reply=(
-                toot.get("in_reply_to_id") is not None
-                and toot.get("in_reply_to_account_id") == toot.get("account", {}).get("id")
-            ),
-            # visibility/has_content_warning/has_mention: read from source (inner for boosts).
-            # This reflects the original content's properties, consistent with is_sensitive
-            # and has_poll. For boosts, the inner toot's visibility is used so that
-            # cross-posting a private toot via boost is correctly caught by the "private" filter.
-            visibility=source.get("visibility", "public"),
+            # Read from outer toot: for reblogs, outer in_reply_to_id is null so boosts
+            # are never classified as replies.
+            is_reply=_in_reply_to_id is not None and _reply_account_id != _own_account_id,
+            is_self_thread_reply=_in_reply_to_id is not None and _reply_account_id == _own_account_id,
+            # Read from source (inner for boosts) so a boost of a private toot
+            # is caught by the "private" filter.
+            visibility=_visibility,
             has_content_warning=bool(source.get("spoiler_text", "")),
             has_mention=len(source.get("mentions", [])) > 0,
         )

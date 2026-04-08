@@ -6,7 +6,7 @@ import unicodedata
 import grapheme
 from datetime import datetime, date
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, model_validator
 
 _URL_STRIP_RE = re.compile(r'https?://[^\s]+')
@@ -143,7 +143,7 @@ class UnifiedPost(BaseModel):
     has_poll: bool = False
     is_reply: bool = False
     is_self_thread_reply: bool = False
-    visibility: str = "public"
+    visibility: Literal["public", "unlisted", "private", "direct"] = "public"
     has_content_warning: bool = False
     has_mention: bool = False
 

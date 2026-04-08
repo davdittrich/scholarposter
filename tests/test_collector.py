@@ -162,6 +162,8 @@ class TestTootToUnifiedPost:
 class TestTootToUnifiedPostReplyFields:
     """WU-2: reply/self-thread/visibility/cw/mention mapping."""
 
+    collector = MastodonCollector(MagicMock())
+
     def _make_toot(self, **overrides) -> dict:
         base = {
             "id": "1",
@@ -185,30 +187,26 @@ class TestTootToUnifiedPostReplyFields:
 
     def test_col_reply_other(self):
         toot = self._make_toot(in_reply_to_id="123", in_reply_to_account_id="456")
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.is_reply is True
         assert post.is_self_thread_reply is False
 
     def test_col_reply_self(self):
         toot = self._make_toot(in_reply_to_id="123", in_reply_to_account_id="789")
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.is_reply is False
         assert post.is_self_thread_reply is True
 
     def test_col_not_reply(self):
         toot = self._make_toot(in_reply_to_id=None, in_reply_to_account_id=None)
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.is_reply is False
         assert post.is_self_thread_reply is False
 
     def test_col_reply_null_account_id(self):
         # Cross-instance: in_reply_to_id set but account unresolvable → treat as other-account reply
         toot = self._make_toot(in_reply_to_id="123", in_reply_to_account_id=None)
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.is_reply is True
         assert post.is_self_thread_reply is False
 
@@ -218,22 +216,19 @@ class TestTootToUnifiedPostReplyFields:
         inner["id"] = "inner1"
         toot = self._make_toot(reblog=inner, in_reply_to_id=None, in_reply_to_account_id=None)
         toot["id"] = "outer1"
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.is_reply is False
         assert post.is_self_thread_reply is False
 
     def test_col_visibility_private(self):
         toot = self._make_toot(visibility="private")
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.visibility == "private"
 
     def test_col_visibility_unlisted(self):
         # Non-default value — confirms the field is actually read from the toot dict
         toot = self._make_toot(visibility="unlisted")
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.visibility == "unlisted"
 
     def test_col_visibility_reblog_uses_inner(self):
@@ -243,32 +238,34 @@ class TestTootToUnifiedPostReplyFields:
         inner["id"] = "inner1"
         toot = self._make_toot(reblog=inner, visibility="public")
         toot["id"] = "outer1"
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.visibility == "private"
+
+    def test_col_visibility_unknown_normalizes_to_public(self):
+        # Unknown visibility values from non-standard servers must not silently
+        # bypass the visibility filters. Normalize to "public" (most permissive default).
+        toot = self._make_toot(visibility="local")
+        post = self.collector.toot_to_unified_post(toot)
+        assert post.visibility == "public"
 
     def test_col_cw_set(self):
         toot = self._make_toot(spoiler_text="Content warning text")
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.has_content_warning is True
 
     def test_col_cw_empty(self):
         toot = self._make_toot(spoiler_text="")
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.has_content_warning is False
 
     def test_col_mention_present(self):
         toot = self._make_toot(mentions=[{"id": "1", "username": "other", "acct": "other", "url": "https://example.com/@other"}])
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.has_mention is True
 
     def test_col_mention_empty(self):
         toot = self._make_toot(mentions=[])
-        collector = MastodonCollector(MagicMock())
-        post = collector.toot_to_unified_post(toot)
+        post = self.collector.toot_to_unified_post(toot)
         assert post.has_mention is False
 
     def test_api_no_exclude_replies(self):
@@ -276,7 +273,7 @@ class TestTootToUnifiedPostReplyFields:
         mock_client.account_statuses.return_value = []
         collector = MastodonCollector(mock_client)
         collector.fetch_oldest_unprocessed(user_id="123", since_id=None)
-        call_kwargs = mock_client.account_statuses.call_args[1]
+        call_kwargs = mock_client.account_statuses.call_args.kwargs
         assert "exclude_replies" not in call_kwargs
 
 
