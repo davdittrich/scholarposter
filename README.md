@@ -306,7 +306,6 @@ scholarposter/
 │   ├── cache.py            #   atomic TTL cache (discovery_cache.json)
 │   ├── ranking.py          #   composite score + top-N ranking
 │   └── digest.py           #   format_table + send_digest (SMTP)
-├── migration.py            # Legacy lasttoot*.txt → state.json migration
 ├── env_writer.py           # Atomic .env read/write with 0600 permissions
 ├── auth/
 │   ├── cli.py              # scholarposter auth linkedin | mastodon — OAuth sub-app
@@ -350,18 +349,16 @@ scholarposter/
 
 ---
 
-## Legacy migration
+## Setting the crossposting watermark
 
-Seed `state.json` from old `lasttoot*.txt` files:
+Use `scholarposter set-watermark` to configure where crossposting begins (see [CLI Reference](docs/commands.md#set-watermark)):
 
-```python
-from scholarposter.migration import migrate_state_files
-from pathlib import Path
-migrate_state_files(Path("."), Path("."))
+```bash
+scholarposter set-watermark --date 2026-01-15        # start after all toots before this date
+scholarposter set-watermark --toot-id 113456789012345678  # start after a specific toot
+scholarposter set-watermark --toot-url "https://mastodon.social/@you/113456789012345678"
+scholarposter set-watermark --date 2026-01-15 --dry-run  # preview without writing
 ```
-
-Reads `lasttoot_bluesky.txt` and `lasttoot.txt` and writes `state.json`. Does not
-overwrite an existing `state.json`.
 
 ---
 
