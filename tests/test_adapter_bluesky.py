@@ -729,7 +729,11 @@ def _mock_client_for_chunk():
     return client
 
 
-# Text that generates exactly 2 chunks at default max_graphemes=300
+# "A"*290 + " " + "B"*290 = 581 graphemes total.
+# chunk_text() splits at whitespace boundaries; the single space at position 291
+# is the only split point, producing exactly 2 chunks:
+#   chunk 1: "A"*290 + " "  (291 graphemes, fits in max_graphemes=300)
+#   chunk 2: "B"*290         (290 graphemes)
 _MULTI_CHUNK_TEXT = "A" * 290 + " " + "B" * 290
 
 
