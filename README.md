@@ -6,20 +6,8 @@
 ![Python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)
 
-**The Research Impact Multiplier: One-click cross-posting from Mastodon to Bluesky, LinkedIn, and X for Scholars.**
-
 scholarposter cross-posts from Mastodon to Bluesky and LinkedIn — resolving DOIs,
 fetching Crossref abstracts, and building link cards automatically.
-
-## Why scholarposter?
-
-For researchers and academics, platform fragmentation is a major hurdle. While many have migrated to **Mastodon** and **Bluesky** for community, **LinkedIn** remains the primary space for professional visibility and career impact, and **X (Twitter)** still hosts large legacy audiences.
-
-Managing these platforms individually is time-consuming and prone to "copy-paste fatigue." **scholarposter** solves this by turning your Mastodon timeline into a central "broadcast hub."
-
-- **Maximize Reach:** Share your latest paper once; reach your entire professional network across four platforms.
-- **Maintain Quality:** Unlike generic cross-posters, scholarposter understands academic content. It resolves DOIs to fetch high-quality metadata and abstracts, ensuring your posts look professional and informative.
-- **Save Time:** Focus on your research, not on social media management.
 
 ## Features
 
