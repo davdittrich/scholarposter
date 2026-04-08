@@ -788,3 +788,90 @@ class TestChunkCount:
         result = PostResult(platform="bluesky", status=PostStatus.POSTED, chunk_count=3)
         record = build_audit_record("99", "bluesky", post, result, dry_run=False)
         assert record["chunk_count"] == 3
+
+
+class TestThreadRollback:
+    def test_thread_rollback_deletes_posted_chunks_on_failure(self):
+        """Chunk 1 fails → chunk 0's URI is deleted via delete_record."""
+        from scholarposter.adapters.bluesky import BlueskyAdapter, _delete_bluesky_post
+        from scholarposter.models import UnifiedPost, PostStatus
+        from unittest.mock import MagicMock
+        from datetime import datetime, timezone
+
+        mock_client = MagicMock()
+        first_response = MagicMock()
+        first_response.uri = "at://did:plc:test/app.bsky.feed.post/chunk0rkey"
+        first_response.cid = "bafyreidfake0"
+        mock_client.com.atproto.repo.create_record.side_effect = [
+            first_response,
+            Exception("network error"),
+        ]
+        mock_client.me.did = "did:plc:test"
+
+        adapter = BlueskyAdapter(mock_client)
+
+        post = UnifiedPost(
+            source_id="123",
+            text="word " * 70,
+            source_url="https://example.com",
+            created_at=datetime.now(timezone.utc),
+        )
+
+        result = adapter.post(post)
+        assert result.status == PostStatus.FAILED
+        mock_client.com.atproto.repo.delete_record.assert_called_once()
+
+    def test_thread_rollback_continues_if_delete_fails(self):
+        """delete_record raises → PostResult still FAILED, no exception propagates."""
+        from scholarposter.adapters.bluesky import BlueskyAdapter
+        from scholarposter.models import UnifiedPost, PostStatus
+        from unittest.mock import MagicMock
+        from datetime import datetime, timezone
+
+        mock_client = MagicMock()
+        first_response = MagicMock()
+        first_response.uri = "at://did:plc:test/app.bsky.feed.post/chunk0rkey"
+        first_response.cid = "bafyreidfake0"
+        mock_client.com.atproto.repo.create_record.side_effect = [
+            first_response,
+            Exception("network error"),
+        ]
+        mock_client.com.atproto.repo.delete_record.side_effect = Exception("delete failed")
+        mock_client.me.did = "did:plc:test"
+
+        adapter = BlueskyAdapter(mock_client)
+
+        post = UnifiedPost(
+            source_id="123",
+            text="word " * 70,
+            source_url="https://example.com",
+            created_at=datetime.now(timezone.utc),
+        )
+
+        result = adapter.post(post)
+        assert result.status == PostStatus.FAILED
+        assert "manually delete" in (result.error or "")
+
+    def test_single_chunk_no_rollback(self):
+        """Single chunk fails → nothing to roll back; delete_record not called."""
+        from scholarposter.adapters.bluesky import BlueskyAdapter
+        from scholarposter.models import UnifiedPost, PostStatus
+        from unittest.mock import MagicMock
+        from datetime import datetime, timezone
+
+        mock_client = MagicMock()
+        mock_client.com.atproto.repo.create_record.side_effect = Exception("fail")
+        mock_client.me.did = "did:plc:test"
+
+        adapter = BlueskyAdapter(mock_client)
+
+        post = UnifiedPost(
+            source_id="123",
+            text="short post",
+            source_url="https://example.com",
+            created_at=datetime.now(timezone.utc),
+        )
+
+        result = adapter.post(post)
+        assert result.status == PostStatus.FAILED
+        mock_client.com.atproto.repo.delete_record.assert_not_called()

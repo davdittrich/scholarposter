@@ -188,6 +188,23 @@ def _build_facets(text: str, client: Any) -> list[models.AppBskyRichtextFacet.Ma
     return facets
 
 
+def _delete_bluesky_post(client: Any, uri: str) -> bool:
+    """Delete a Bluesky post by its AT URI. Returns True on success, False on failure."""
+    try:
+        rkey = uri.split("/")[-1]
+        client.com.atproto.repo.delete_record(
+            models.ComAtprotoRepoDeleteRecord.Data(
+                repo=client.me.did,
+                collection="app.bsky.feed.post",
+                rkey=rkey,
+            )
+        )
+        return True
+    except Exception as e:
+        logger.warning("Rollback: failed to delete %s: %s", uri, e)
+        return False
+
+
 class BlueskyAdapter(BaseAdapter):
     def __init__(self, client: Any, hashtag_rules: Optional[list[HashtagRule]] = None,
                  media_config: Optional[MediaConfig] = None):
@@ -216,6 +233,7 @@ class BlueskyAdapter(BaseAdapter):
         parent_ref: Optional[Any] = None
         promoted_link = None
         link_card_placed = False
+        posted_uris: list[str] = []
 
         for i, chunk in enumerate(chunks):
             facets = _build_facets(chunk, self._client)
@@ -254,20 +272,25 @@ class BlueskyAdapter(BaseAdapter):
                     )
                 )
             except Exception as e:
-                if i > 0:
-                    # FR-28: already-posted chunks are NOT deleted (rollback deferred).
-                    # The toot is marked failed in state; orphaned Bluesky post(s) require manual deletion.
+                if posted_uris:
                     logger.warning(
-                        "Bluesky thread partially posted (%d/%d chunks) before failure — "
-                        "orphaned post(s) remain on Bluesky and require manual deletion (toot %s)",
-                        i, len(chunks), unified_post.source_id,
+                        "Bluesky thread failed at chunk %d/%d (toot %s) — "
+                        "rolling back %d posted chunk(s).",
+                        i, len(chunks), unified_post.source_id, len(posted_uris),
                     )
+                orphaned = [uri for uri in posted_uris
+                            if not _delete_bluesky_post(self._client, uri)]
+                error_msg = str(e)
+                if orphaned:
+                    error_msg += f"; rollback partial — manually delete: {', '.join(orphaned)}"
                 return PostResult(
                     platform=self.platform_name,
                     status=PostStatus.FAILED,
-                    error=str(e),
+                    error=error_msg,
                     chunk_count=len(chunks),
                 )
+
+            posted_uris.append(response.uri)
 
             if i == 0:
                 ref = models.create_strong_ref(response)
