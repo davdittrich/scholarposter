@@ -218,7 +218,7 @@ before the `discover` command runs traversal.
 | `modes` | `["cited-by", "cites"]` | Traversal modes to run by default; valid values: `"cited-by"`, `"cites"`, `"all"` |
 | `limit` | `20` | Maximum number of candidates to return |
 | `digest_email` | (none) | Email address for discovery digests; required when `--email-digest` is passed to `discover` |
-| `digest_auto` | `false` | Send a digest email automatically on every `discover` run |
+| `digest_auto` | `false` | Send a digest email automatically on every `discover` run when results are non-empty. Requires `digest_email` to be set; logs a warning and skips if absent. |
 | `cache_ttl_hours` | `24` | Time-to-live for cached discovery results, in hours |
 
 ### `[discovery.ranking]`

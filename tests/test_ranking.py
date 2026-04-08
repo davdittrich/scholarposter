@@ -432,6 +432,166 @@ class TestDiscoverCLIWU6:
         assert "digest_email" in (result.output + (result.stderr or "")).lower() or \
                "email" in (result.output + (result.stderr or "")).lower()
 
+    @respx.mock
+    def test_digest_auto_sends_when_results(self, tmp_path):
+        """digest_auto=true → send_digest called automatically when papers found."""
+        from scholarposter.cli import app
+        from unittest.mock import patch
+        toml = (
+            "[mastodon]\n"
+            'instance = "https://fediscience.org"\n'
+            'credentials_file = "test.secret"\n'
+            "\n"
+            "[discovery]\n"
+            "enabled = true\n"
+            'digest_email = "user@example.com"\n'
+            "digest_auto = true\n"
+        )
+        p = tmp_path / "config.toml"
+        p.write_text(toml)
+        bib = [{"doi": "10.1/seed", "title": "Seed", "authors": ["A"]}]
+        (tmp_path / "bibliography.json").write_text(json.dumps(bib))
+
+        seed_work = _make_work("10.1/seed", openalex_id="W1")
+        new_paper = _make_work("10.1/auto", title="Auto Paper", openalex_id="W2")
+
+        respx.get(f"{_BASE}/works/https://doi.org/10.1/seed").mock(
+            return_value=httpx.Response(200, json=seed_work)
+        )
+        respx.get(f"{_BASE}/works").mock(return_value=_work_list([new_paper]))
+
+        captured = []
+
+        class FakeSMTP:
+            def __init__(self, *a, **kw): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def send_message(self, msg): captured.append(msg)
+
+        with patch("smtplib.SMTP", FakeSMTP):
+            result = cli_runner.invoke(app, ["discover", "--config", str(p), "--mode", "cited-by"])
+        assert result.exit_code == 0
+        assert len(captured) == 1
+
+    @respx.mock
+    def test_digest_auto_false_no_send(self, tmp_path):
+        """digest_auto=false → send_digest NOT called."""
+        from scholarposter.cli import app
+        from unittest.mock import patch
+        toml = (
+            "[mastodon]\n"
+            'instance = "https://fediscience.org"\n'
+            'credentials_file = "test.secret"\n'
+            "\n"
+            "[discovery]\n"
+            "enabled = true\n"
+            'digest_email = "user@example.com"\n'
+            "digest_auto = false\n"
+        )
+        p = tmp_path / "config.toml"
+        p.write_text(toml)
+        bib = [{"doi": "10.1/seed", "title": "Seed", "authors": ["A"]}]
+        (tmp_path / "bibliography.json").write_text(json.dumps(bib))
+
+        seed_work = _make_work("10.1/seed", openalex_id="W1")
+        new_paper = _make_work("10.1/noauto", title="No Auto", openalex_id="W2")
+
+        respx.get(f"{_BASE}/works/https://doi.org/10.1/seed").mock(
+            return_value=httpx.Response(200, json=seed_work)
+        )
+        respx.get(f"{_BASE}/works").mock(return_value=_work_list([new_paper]))
+
+        captured = []
+
+        class FakeSMTP:
+            def __init__(self, *a, **kw): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def send_message(self, msg): captured.append(msg)
+
+        with patch("smtplib.SMTP", FakeSMTP):
+            result = cli_runner.invoke(app, ["discover", "--config", str(p), "--mode", "cited-by"])
+        assert result.exit_code == 0
+        assert len(captured) == 0
+
+    @respx.mock
+    def test_digest_auto_not_double_sent_with_email_digest_flag(self, tmp_path):
+        """digest_auto=true + --email-digest flag → send_digest called only once."""
+        from scholarposter.cli import app
+        from unittest.mock import patch
+        toml = (
+            "[mastodon]\n"
+            'instance = "https://fediscience.org"\n'
+            'credentials_file = "test.secret"\n'
+            "\n"
+            "[discovery]\n"
+            "enabled = true\n"
+            'digest_email = "user@example.com"\n'
+            "digest_auto = true\n"
+        )
+        p = tmp_path / "config.toml"
+        p.write_text(toml)
+        bib = [{"doi": "10.1/seed", "title": "Seed", "authors": ["A"]}]
+        (tmp_path / "bibliography.json").write_text(json.dumps(bib))
+
+        seed_work = _make_work("10.1/seed", openalex_id="W1")
+        new_paper = _make_work("10.1/both", title="Both Paper", openalex_id="W2")
+
+        respx.get(f"{_BASE}/works/https://doi.org/10.1/seed").mock(
+            return_value=httpx.Response(200, json=seed_work)
+        )
+        respx.get(f"{_BASE}/works").mock(return_value=_work_list([new_paper]))
+
+        captured = []
+
+        class FakeSMTP:
+            def __init__(self, *a, **kw): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def send_message(self, msg): captured.append(msg)
+
+        with patch("smtplib.SMTP", FakeSMTP):
+            result = cli_runner.invoke(app, ["discover", "--config", str(p),
+                                              "--mode", "cited-by", "--email-digest"])
+        assert result.exit_code == 0
+        assert len(captured) == 1  # only once, not twice
+
+    @respx.mock
+    def test_digest_auto_warns_when_no_digest_email(self, tmp_path):
+        """digest_auto=true but digest_email absent → warning logged, no send."""
+        from scholarposter.cli import app
+        from unittest.mock import patch
+        toml = (
+            "[mastodon]\n"
+            'instance = "https://fediscience.org"\n'
+            'credentials_file = "test.secret"\n'
+            "\n"
+            "[discovery]\n"
+            "enabled = true\n"
+            "digest_auto = true\n"
+            # no digest_email
+        )
+        p = tmp_path / "config.toml"
+        p.write_text(toml)
+        bib = [{"doi": "10.1/seed", "title": "Seed", "authors": ["A"]}]
+        (tmp_path / "bibliography.json").write_text(json.dumps(bib))
+
+        seed_work = _make_work("10.1/seed", openalex_id="W1")
+        new_paper = _make_work("10.1/warn", title="Warn Paper", openalex_id="W2")
+
+        respx.get(f"{_BASE}/works/https://doi.org/10.1/seed").mock(
+            return_value=httpx.Response(200, json=seed_work)
+        )
+        respx.get(f"{_BASE}/works").mock(return_value=_work_list([new_paper]))
+
+        warnings: list[str] = []
+        with patch("scholarposter.cli.logger") as mock_log:
+            mock_log.warning.side_effect = lambda msg, *a, **kw: warnings.append(msg)
+            result = cli_runner.invoke(app, ["discover", "--config", str(p), "--mode", "cited-by"])
+
+        assert result.exit_code == 0
+        assert any("digest_email" in w for w in warnings)
+
     def test_rank_used_for_dedup(self, tmp_path):
         """discover uses rank() — same DOI from two modes → appears once in output."""
         from scholarposter.cli import app

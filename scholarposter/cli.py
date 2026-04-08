@@ -1095,6 +1095,30 @@ def discover(
             typer.echo(f"Error sending digest: {e}", err=True)
             raise typer.Exit(code=1)
 
+    if effective_cfg.digest_auto and not email_digest:
+        disc_email = effective_cfg.digest_email
+        if disc_email:
+            smtp_host, smtp_port, from_addr = "localhost", 25, "scholarposter@localhost"
+            if cfg:
+                for backend in cfg.notifications.backends:
+                    if backend.type == "email" and backend.smtp_host:
+                        smtp_host = backend.smtp_host
+                        smtp_port = backend.smtp_port
+                        from_addr = backend.from_addr or from_addr
+                        break
+            try:
+                send_digest(
+                    unique, effective_cfg, date.today(),
+                    smtp_host=smtp_host, smtp_port=smtp_port, from_addr=from_addr,
+                )
+                logger.info("Auto-digest sent to %s.", disc_email)
+            except Exception as e:
+                logger.warning("Auto-digest failed: %s", e)
+        else:
+            logger.warning(
+                "digest_auto is true but discovery.digest_email is not set; skipping digest."
+            )
+
 
 @app.command(name="audit")
 def audit_cmd(
