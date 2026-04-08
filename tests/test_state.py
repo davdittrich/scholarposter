@@ -396,3 +396,68 @@ def test_bibliography_custom_filename(tmp_path):
     mgr.append_bibliography(entry)
     assert (tmp_path / "refs.json").exists()
     assert not (tmp_path / "bibliography.json").exists()
+
+
+def test_audit_rotation_renames_file_when_size_exceeded(tmp_path):
+    """Rotation triggers when audit file reaches rotation_max_bytes."""
+    mgr = StateManager(
+        state_dir=tmp_path,
+        audit_file=tmp_path / "audit.jsonl",
+        audit_rotation_max_bytes=50,  # tiny threshold
+    )
+    # Write a record that exceeds 50 bytes
+    with mgr.lock():
+        mgr.append_audit({"timestamp": "2024-01-01T00:00:00Z", "status": "posted", "platform": "bluesky"})
+    # The original audit.jsonl should no longer exist; an archive should
+    archives = list(tmp_path.glob("audit.*.jsonl"))
+    assert len(archives) == 1
+    assert (tmp_path / "audit.jsonl").stat().st_size < 50  # new file is smaller
+
+
+def test_audit_rotation_disabled_when_zero(tmp_path):
+    """rotation_max_bytes=0 disables rotation; file grows normally."""
+    mgr = StateManager(
+        state_dir=tmp_path,
+        audit_file=tmp_path / "audit.jsonl",
+        audit_rotation_max_bytes=0,
+    )
+    with mgr.lock():
+        mgr.append_audit({"timestamp": "2024-01-01T00:00:00Z", "status": "posted"})
+        mgr.append_audit({"timestamp": "2024-01-02T00:00:00Z", "status": "posted"})
+    assert not list(tmp_path.glob("audit.*.jsonl"))  # no archives
+
+
+def test_audit_prune_removes_old_records(tmp_path):
+    """prune_audit removes records older than retention_days."""
+    audit_file = tmp_path / "audit.jsonl"
+    # Write 3 records: 2 old (40 days ago), 1 recent (1 day ago)
+    old1 = {"timestamp": (datetime.now(timezone.utc) - timedelta(days=40)).isoformat(), "status": "posted"}
+    old2 = {"timestamp": (datetime.now(timezone.utc) - timedelta(days=35)).isoformat(), "status": "failed"}
+    recent = {"timestamp": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(), "status": "posted"}
+    audit_file.write_text(
+        json.dumps(old1) + "\n" + json.dumps(old2) + "\n" + json.dumps(recent) + "\n"
+    )
+    mgr = StateManager(
+        state_dir=tmp_path,
+        audit_file=audit_file,
+        audit_retention_days=30,
+    )
+    with mgr.lock():
+        pruned = mgr.prune_audit()
+    assert pruned == 2
+    lines = [l for l in audit_file.read_text().splitlines() if l.strip()]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["status"] == "posted"
+
+
+def test_audit_prune_noop_when_disabled(tmp_path):
+    """retention_days=0 → prune_audit() is a no-op, returns 0."""
+    audit_file = tmp_path / "audit.jsonl"
+    old = {"timestamp": (datetime.now(timezone.utc) - timedelta(days=400)).isoformat(), "status": "posted"}
+    audit_file.write_text(json.dumps(old) + "\n")
+    mgr = StateManager(state_dir=tmp_path, audit_file=audit_file, audit_retention_days=0)
+    with mgr.lock():
+        pruned = mgr.prune_audit()
+    assert pruned == 0
+    # File unchanged
+    assert audit_file.read_text().strip()

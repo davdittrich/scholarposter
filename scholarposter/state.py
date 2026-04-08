@@ -23,6 +23,8 @@ class StateManager:
         lock_file: str = "scholarposter.lock",
         audit_file: Optional[Path] = None,
         bibliography_file: str = "bibliography.json",
+        audit_rotation_max_bytes: int = 0,   # 0 = disabled
+        audit_retention_days: int = 0,        # 0 = disabled
     ):
         self._dir = Path(state_dir)
         self._state_path = self._dir / state_file
@@ -31,6 +33,8 @@ class StateManager:
         self._audit_path: Optional[Path] = audit_file
         self._bibliography_path = self._dir / bibliography_file
         self._lock_fd: Optional[int] = None
+        self._audit_rotation_max_bytes = audit_rotation_max_bytes
+        self._audit_retention_days = audit_retention_days
 
     # -------------------------------------------------------------------------
     # State
@@ -161,8 +165,49 @@ class StateManager:
                 os.write(fd, line.encode("utf-8"))
             finally:
                 os.close(fd)
+            if (
+                self._audit_rotation_max_bytes > 0
+                and self._audit_path.exists()
+                and self._audit_path.stat().st_size >= self._audit_rotation_max_bytes
+            ):
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+                stem = self._audit_path.stem
+                suffix = self._audit_path.suffix
+                archive = self._audit_path.with_name(f"{stem}.{stamp}{suffix}")
+                counter = 0
+                while archive.exists():
+                    counter += 1
+                    archive = self._audit_path.with_name(f"{stem}.{stamp}-{counter}{suffix}")
+                os.rename(str(self._audit_path), str(archive))
+                # Create a fresh empty audit file so callers can stat it
+                fd2 = os.open(str(self._audit_path), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+                os.close(fd2)
+                logger.info("Audit log rotated to %s.", archive.name)
         except Exception as e:
             logger.warning(f"Audit write failed (non-blocking): {e}")
+
+    def prune_audit(self) -> int:
+        """Delete audit records older than audit_retention_days. Returns count pruned.
+
+        No-op when audit_retention_days is 0 or audit_file is None.
+        Must be called while the process lock is held.
+        """
+        if self._audit_retention_days == 0 or self._audit_path is None:
+            return 0
+        if not self._audit_path.exists():
+            return 0
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self._audit_retention_days)
+        with open(self._audit_path) as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        kept = [
+            r for r in records
+            if datetime.fromisoformat(r.get("timestamp", "1970-01-01T00:00:00+00:00")) >= cutoff
+        ]
+        pruned = len(records) - len(kept)
+        if pruned > 0:
+            self._atomic_write_jsonl(self._audit_path, kept)
+            logger.info("Pruned %d audit record(s) older than %d days.", pruned, self._audit_retention_days)
+        return pruned
 
     # -------------------------------------------------------------------------
     # Locking
@@ -209,6 +254,22 @@ class StateManager:
         except BaseException:
             try:
                 os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
+    def _atomic_write_jsonl(self, path: Path, records: list[dict]) -> None:
+        """Write records as JSON-lines atomically (temp file + os.rename, 0o600)."""
+        tmp_path = path.with_name(path.name + ".tmp")
+        fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w") as f:
+                for rec in records:
+                    f.write(json.dumps(rec, default=str) + "\n")
+            os.rename(str(tmp_path), str(path))
+        except BaseException:
+            try:
+                os.unlink(str(tmp_path))
             except OSError:
                 pass
             raise

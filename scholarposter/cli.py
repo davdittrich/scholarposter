@@ -196,12 +196,20 @@ def run(
         lock_file=cfg.state.lock_file,
         audit_file=cfg.audit.resolved_file if cfg.audit.enabled else None,
         bibliography_file=cfg.state.bibliography_file,
+        audit_rotation_max_bytes=(
+            cfg.audit.rotation_max_mb * 1024 * 1024 if cfg.audit.enabled else 0
+        ),
+        audit_retention_days=(
+            cfg.audit.retention_days if cfg.audit.enabled else 0
+        ),
     )
 
     if not state_mgr.acquire_lock():
         # FR-40: lock held = another instance running; exit 0 (not an error for cron)
         logger.info("Another instance is already running. Exiting cleanly.")
         raise typer.Exit(code=0)
+
+    state_mgr.prune_audit()
 
     try:
         mastodon = _build_mastodon_client(cfg, env_path)

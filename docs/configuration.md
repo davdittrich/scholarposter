@@ -201,8 +201,8 @@ Records every cross-post attempt as a JSON line in a `.jsonl` file. Required by 
 | `enabled` | `false` | Write an audit record for each cross-post attempt |
 | `file` | `"audit.jsonl"` | Log file path; resolved relative to the config directory |
 | `min_report_sample` | `3` | Minimum number of records before the `audit` command displays aggregate statistics |
-| `rotation_max_mb` | `50` | Maximum log size in MB before rotation (not yet enforced) |
-| `retention_days` | `365` | Retain records for this many days; older records are deleted (not yet enforced) |
+| `rotation_max_mb` | `50` | Rotate the audit log when it exceeds this size in MB. On rotation, the existing file is renamed to `audit.YYYYMMDD-HHMMSS-ffffff.jsonl` and a fresh log begins. Set to `0` to disable rotation. |
+| `retention_days` | `365` | On each `run`, delete audit records older than this many days. Set to `0` to retain records indefinitely. |
 
 ---
 
