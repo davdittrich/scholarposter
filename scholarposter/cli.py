@@ -97,6 +97,7 @@ def _load_config_and_state(config: Path) -> tuple[StateManager, Optional[Any]]:
             state_dir=state_dir,
             state_file=Path(cfg.state.state_file).name,
             cache_file=Path(cfg.state.cache_file).name,
+            bibliography_file=cfg.state.bibliography_file,
         )
         return state_mgr, cfg
     except Exception:
@@ -194,6 +195,7 @@ def run(
         cache_file=cfg.state.cache_file,
         lock_file=cfg.state.lock_file,
         audit_file=cfg.audit.resolved_file if cfg.audit.enabled else None,
+        bibliography_file=cfg.state.bibliography_file,
     )
 
     if not state_mgr.acquire_lock():
@@ -558,6 +560,7 @@ def retry(
         state_file=cfg.state.state_file,
         cache_file=cfg.state.cache_file,
         lock_file=cfg.state.lock_file,
+        bibliography_file=cfg.state.bibliography_file,
     )
 
     if not state_mgr.acquire_lock():
@@ -1408,6 +1411,7 @@ def set_watermark_cmd(
     state_mgr = StateManager(
         state_dir=state_dir,
         state_file=Path(cfg.state.state_file).name,
+        bibliography_file=cfg.state.bibliography_file,
     )
 
     # --- Resolve the watermark ID ---

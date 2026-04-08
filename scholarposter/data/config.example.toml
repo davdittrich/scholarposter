@@ -124,6 +124,7 @@ retention = "30 days"
 state_file = "state.json"
 cache_file = "cache.json"
 lock_file = "scholarposter.lock"
+bibliography_file = "bibliography.json"
 
 # --- Audit ---
 

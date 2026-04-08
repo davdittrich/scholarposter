@@ -182,6 +182,7 @@ Port 465 uses implicit TLS (SMTP_SSL). Other ports use capability-based STARTTLS
 | `state_file` | `"state.json"` | Per-platform toot tracking |
 | `cache_file` | `"cache.json"` | DOI/URL enrichment cache |
 | `lock_file` | `"scholarposter.lock"` | Prevents concurrent runs |
+| `bibliography_file` | `"bibliography.json"` | Bibliography of DOI-enriched posts |
 
 State files are resolved relative to the directory containing `config.toml`, not the
 working directory. This ensures all commands (`run`, `retry`, `status`, `bibliography`,

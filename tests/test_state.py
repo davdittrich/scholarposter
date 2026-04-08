@@ -385,3 +385,14 @@ class TestBibliography:
         bib = mgr.load_bibliography()
         dois = [e.get("doi") for e in bib]
         assert "10.9999/new" in dois
+
+
+def test_bibliography_custom_filename(tmp_path):
+    mgr = StateManager(state_dir=tmp_path, bibliography_file="refs.json")
+    entry = BibliographyEntry(
+        doi="10.1234/foo", title="Test", url="https://doi.org/10.1234/foo",
+        shared_at=datetime(2024, 1, 1, tzinfo=timezone.utc), platforms=["bluesky"],
+    )
+    mgr.append_bibliography(entry)
+    assert (tmp_path / "refs.json").exists()
+    assert not (tmp_path / "bibliography.json").exists()

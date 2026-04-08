@@ -153,6 +153,7 @@ class StateConfig(BaseModel):
     state_file: str = "state.json"
     cache_file: str = "cache.json"
     lock_file: str = "scholarposter.lock"
+    bibliography_file: str = "bibliography.json"
 
 
 class AuditConfig(BaseModel):

@@ -22,12 +22,14 @@ class StateManager:
         cache_file: str = "cache.json",
         lock_file: str = "scholarposter.lock",
         audit_file: Optional[Path] = None,
+        bibliography_file: str = "bibliography.json",
     ):
         self._dir = Path(state_dir)
         self._state_path = self._dir / state_file
         self._cache_path = self._dir / cache_file
         self._lock_path = self._dir / lock_file
         self._audit_path: Optional[Path] = audit_file
+        self._bibliography_path = self._dir / bibliography_file
         self._lock_fd: Optional[int] = None
 
     # -------------------------------------------------------------------------
@@ -106,18 +108,17 @@ class StateManager:
 
     def load_bibliography(self) -> list[dict]:
         """Load bibliography entries. Returns [] on missing/corrupt file."""
-        bib_path = self._dir / "bibliography.json"
-        if not bib_path.exists():
+        if not self._bibliography_path.exists():
             return []
         try:
-            with open(bib_path) as f:
+            with open(self._bibliography_path) as f:
                 return json.load(f)
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning(f"bibliography.json corrupt, treating as empty: {e}")
             return []
 
     def _save_bibliography(self, data: list) -> None:
-        self._atomic_write(self._dir / "bibliography.json", data)
+        self._atomic_write(self._bibliography_path, data)
 
     def append_bibliography(self, entry: "BibliographyEntry") -> None:
         """Append entry, dedup by DOI. Must be called while lock is held."""
