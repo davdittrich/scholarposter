@@ -190,7 +190,7 @@ scholarposter sync-engagement --force         # re-sync already-synced posts
 ```
 
 Requires Bluesky credentials in `.env` (`BLUESKY_EMAIL` and `BLUESKY_PASSWORD`).
-Only Bluesky records are synced; LinkedIn records are skipped.
+Only Bluesky records are synced. LinkedIn records are skipped. Bluesky records with handle-based post URLs (e.g., `bsky.app/profile/alice.bsky.social/…`) are resolved to DIDs automatically; records where resolution fails are counted as skipped.
 Prints `Synced engagement for N posts (M skipped, K errors).`
 
 ### Validating configuration

@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Any
+from urllib.parse import urlparse
 
 
 def parse_at_uri(post_url: Optional[str]) -> Optional[str]:
@@ -18,7 +19,6 @@ def parse_at_uri(post_url: Optional[str]) -> Optional[str]:
     if not post_url:
         return None
     try:
-        from urllib.parse import urlparse
         parts = [p for p in urlparse(post_url).path.split("/") if p]
         # Expected structure: ["profile", "{did_or_handle}", "post", "{rkey}"]
         if len(parts) < 4 or parts[0] != "profile" or parts[2] != "post":
@@ -26,6 +26,21 @@ def parse_at_uri(post_url: Optional[str]) -> Optional[str]:
         did = parts[1]
         rkey = parts[3]
         if not did.startswith("did:") or not rkey:
+            return None
+        return f"at://{did}/app.bsky.feed.post/{rkey}"
+    except Exception:
+        return None
+
+
+def _resolve_handle_to_at_uri(handle: str, rkey: str, client: Any) -> Optional[str]:
+    """Resolve a Bluesky handle to a DID and construct an AT URI.
+
+    Returns None when resolution fails — caller treats this as skipped.
+    """
+    try:
+        result = client.com.atproto.identity.resolve_handle(params={"handle": handle})
+        did = getattr(result, "did", None)
+        if not isinstance(did, str) or not did.startswith("did:"):
             return None
         return f"at://{did}/app.bsky.feed.post/{rkey}"
     except Exception:
@@ -157,7 +172,17 @@ def _process_record(
 
     at_uri = parse_at_uri(post_url)
     if at_uri is None:
-        return ("skipped", rec)
+        # Handle-based URL: attempt DID resolution before skipping
+        parts = [p for p in urlparse(post_url).path.split("/") if p]
+        if (
+            len(parts) >= 4
+            and parts[0] == "profile"
+            and parts[2] == "post"
+            and not parts[1].startswith("did:")
+        ):
+            at_uri = _resolve_handle_to_at_uri(parts[1], parts[3], client)
+        if at_uri is None:
+            return ("skipped", rec)
 
     try:
         likes = _fetch_likes(at_uri, client)

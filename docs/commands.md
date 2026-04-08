@@ -63,7 +63,7 @@ scholarposter sync-engagement [--dry-run] [--force]
 
 **Prerequisite:** `[audit] enabled = true` must be set in `config.toml`. The command exits with an error if audit logging is disabled.
 
-Only Bluesky records are synced. LinkedIn records are skipped. Requires `BLUESKY_EMAIL` and `BLUESKY_PASSWORD` in `.env`. Prints `Synced engagement for N posts (M skipped, K errors).`
+Only Bluesky records are synced. LinkedIn records are skipped. Bluesky records with handle-based post URLs are resolved to DIDs automatically. Records where resolution fails are counted as skipped. Requires `BLUESKY_EMAIL` and `BLUESKY_PASSWORD` in `.env`. Prints `Synced engagement for N posts (M skipped, K errors).`
 
 ### `set-watermark`
 

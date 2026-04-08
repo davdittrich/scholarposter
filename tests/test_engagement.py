@@ -11,6 +11,8 @@ import pytest
 from typer.testing import CliRunner
 
 from scholarposter.audit.engagement import (
+    _process_record,
+    _resolve_handle_to_at_uri,
     _write_records_atomically,
     parse_at_uri,
     sync_engagement,
@@ -432,7 +434,7 @@ class TestEngagementApiErrors:
 class TestCoverageCompleteness:
     def test_parse_at_uri_urlparse_exception_returns_none(self):
         """Lines 31-32: except Exception fallback in parse_at_uri."""
-        with patch("urllib.parse.urlparse", side_effect=AttributeError("boom")):
+        with patch("scholarposter.audit.engagement.urlparse", side_effect=AttributeError("boom")):
             assert parse_at_uri("https://bsky.app/profile/did:plc:x/post/r") is None
 
     def test_reposts_cursor_pagination(self, tmp_path):
@@ -666,3 +668,68 @@ class TestSyncEngagementCmd:
             "Contention handler must not delete the lock file; "
             "it belongs to the process that holds the lock"
         )
+
+
+# ---------------------------------------------------------------------------
+# Handle-based URL resolution (WU-4)
+# ---------------------------------------------------------------------------
+
+class TestHandleResolution:
+    def test_process_record_resolves_handle_url(self):
+        """Handle-based URL → DID resolved → synced."""
+        mock_client = MagicMock()
+        mock_client.com.atproto.identity.resolve_handle.return_value = MagicMock(did="did:plc:xyz")
+        mock_client.app.bsky.feed.get_likes.return_value = MagicMock(likes=[], cursor=None)
+        mock_client.app.bsky.feed.get_reposted_by.return_value = MagicMock(reposted_by=[], cursor=None)
+
+        rec = {
+            "platform": "bluesky",
+            "post_url": "https://bsky.app/profile/alice.bsky.social/post/abc123",
+        }
+        outcome, updated = _process_record(rec, mock_client, force=True)
+        assert outcome == "synced"
+        assert updated["bluesky_likes"] == 0
+        mock_client.com.atproto.identity.resolve_handle.assert_called_once_with(
+            params={"handle": "alice.bsky.social"}
+        )
+
+    def test_process_record_skips_when_handle_resolution_fails(self):
+        """Handle-based URL → resolution raises → skipped."""
+        mock_client = MagicMock()
+        mock_client.com.atproto.identity.resolve_handle.side_effect = Exception("network error")
+
+        rec = {
+            "platform": "bluesky",
+            "post_url": "https://bsky.app/profile/alice.bsky.social/post/abc123",
+        }
+        outcome, _ = _process_record(rec, mock_client, force=True)
+        assert outcome == "skipped"
+
+    def test_parse_at_uri_did_url_unchanged(self):
+        """DID-based URLs still work — no regression."""
+        uri = parse_at_uri("https://bsky.app/profile/did:plc:xyz/post/abc123")
+        assert uri == "at://did:plc:xyz/app.bsky.feed.post/abc123"
+
+    def test_resolve_handle_returns_none_on_invalid_did(self):
+        """_resolve_handle_to_at_uri returns None when resolved DID doesn't start with 'did:'."""
+        mock_client = MagicMock()
+        mock_client.com.atproto.identity.resolve_handle.return_value = MagicMock(did="not-a-did")
+
+        result = _resolve_handle_to_at_uri("alice.bsky.social", "rkey1", mock_client)
+        assert result is None
+
+    def test_resolve_handle_returns_none_when_did_missing(self):
+        """_resolve_handle_to_at_uri returns None when result has no did attribute."""
+        mock_client = MagicMock()
+        mock_client.com.atproto.identity.resolve_handle.return_value = MagicMock(spec=[])
+
+        result = _resolve_handle_to_at_uri("alice.bsky.social", "rkey1", mock_client)
+        assert result is None
+
+    def test_resolve_handle_constructs_correct_at_uri(self):
+        """_resolve_handle_to_at_uri constructs the correct AT URI."""
+        mock_client = MagicMock()
+        mock_client.com.atproto.identity.resolve_handle.return_value = MagicMock(did="did:plc:abc123")
+
+        result = _resolve_handle_to_at_uri("alice.bsky.social", "rkey1", mock_client)
+        assert result == "at://did:plc:abc123/app.bsky.feed.post/rkey1"
