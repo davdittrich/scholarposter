@@ -299,6 +299,25 @@ class TestSendDigest:
             logger.remove(sid)
         assert any("digest email failed" in m.lower() for m in messages)
 
+    def test_crlf_in_digest_email_stripped(self):
+        """CRLF in digest_email is stripped before reaching parseaddr (defense-in-depth).
+
+        DiscoveryConfig blocks CRLF at construction time via @model_validator, but
+        send_digest adds a second layer for callers that bypass Pydantic validation
+        (MagicMock, model_construct, etc.).  Discriminating: without the .replace()
+        fix the raw CRLF string would be passed to parseaddr.
+        """
+        from scholarposter.discovery.digest import send_digest
+        cfg = MagicMock()
+        cfg.digest_email = "user@example.com\r\nBcc: injected@host.com"
+        with patch("scholarposter.discovery.digest.parseaddr") as mock_pa, \
+             patch("scholarposter.discovery.digest.smtplib"):
+            mock_pa.return_value = ("", "user@example.com")
+            send_digest([_paper()], cfg, date(2026, 4, 7))
+            called_arg = mock_pa.call_args[0][0]
+            assert "\r" not in called_arg
+            assert "\n" not in called_arg
+
 
 # ---------------------------------------------------------------------------
 # CLI: --email-digest + --limit wiring (added to discover command)

@@ -59,7 +59,8 @@ def send_digest(
         smtp_port: SMTP server port (default 25)
         from_addr: From address for the email
     """
-    _, to_addr = parseaddr(config.digest_email or "")
+    safe_email = (config.digest_email or "").replace("\r", "").replace("\n", "")
+    _, to_addr = parseaddr(safe_email)
     if not to_addr:
         raise ValueError(
             f"digest_email is not a valid address — cannot send digest: {config.digest_email!r}"
