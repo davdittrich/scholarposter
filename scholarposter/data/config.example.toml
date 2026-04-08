@@ -1,0 +1,140 @@
+# config.example.toml — All supported configuration keys for scholarposter.
+# Copy to config.toml and fill in the required values.
+# Sensitive fields are shown as empty strings ("").
+
+[mastodon]
+instance = "https://mastodon.social"
+credentials_file = ""
+
+# --- Platform sections ---
+# Define one [platforms.<name>] section per destination platform.
+
+[platforms.bluesky]
+enabled = true
+
+[platforms.bluesky.filters]
+skip_hashtags = []
+skip_content_types = []
+require_hashtags = []
+
+[platforms.bluesky.media]
+enabled = true
+max_image_size_kb = 950
+
+# Hashtag rules: prepend add_hashtag when any of if_any_hashtag are present.
+# [[platforms.bluesky.hashtag_rules]]
+# add_hashtag = "#OpenAccess"
+# if_any_hashtag = ["#preprint", "#arxiv"]
+
+[platforms.linkedin]
+enabled = true
+
+[platforms.linkedin.filters]
+skip_hashtags = []
+skip_content_types = []
+require_hashtags = []
+
+[platforms.linkedin.media]
+enabled = true
+max_image_size_kb = 950
+
+# --- Enrichment ---
+
+[enrichment.crossref]
+enabled = true
+etiquette_email = ""
+cache_ttl_days = 7
+timeout_seconds = 5
+
+[enrichment.url_unshorten]
+enabled = true
+timeout_seconds = 10
+max_redirects = 5
+
+[enrichment.progressive]
+enabled = true
+
+[enrichment.summarization]
+enabled = true
+backend = "extractive"
+max_chars = 150
+prompt = "Summarize the key finding of this academic paper/article in one sentence (~150 characters) for a social media link card. Be precise and specific."
+
+[enrichment.summarization.gemini]
+model = ""
+timeout_seconds = 30
+
+[enrichment.summarization.lemonade]
+model = ""
+host = "http://127.0.0.1:8000"
+timeout_seconds = 60
+ctx_size = 8192
+load_timeout_seconds = 180
+preferred_models = [
+    "Phi-4-mini-instruct-GGUF",
+    "Qwen3-4B-Instruct-2507-GGUF",
+    "Qwen3-8B-GGUF",
+    "DeepSeek-Qwen3-8B-GGUF",
+    "Llama-3.2-3B-Instruct-GGUF",
+    "Gemma-3-4b-it-GGUF",
+    "Qwen3-1.7B-GGUF",
+    "Llama-3.2-1B-Instruct-GGUF",
+]
+
+[enrichment.summarization.ollama]
+model = "gemma3:9b"
+host = "http://localhost:11434"
+timeout_seconds = 30
+
+[enrichment.summarization.extractive]
+max_sentences = 5
+
+# --- Notifications ---
+# Add one [[notifications.backends]] entry per notification channel.
+# Supported types: "ntfy", "signal", "email"
+#
+# [[notifications.backends]]
+# type = "ntfy"
+# topic = "your-topic"
+# server = "https://ntfy.sh"
+
+[notifications]
+
+# --- Logging ---
+
+[logging]
+level = "INFO"
+file = "scholarposter.log"
+rotation = "10 MB"
+retention = "30 days"
+
+# --- State ---
+
+[state]
+state_file = "state.json"
+cache_file = "cache.json"
+lock_file = "scholarposter.lock"
+
+# --- Audit ---
+
+[audit]
+enabled = false
+file = "audit.jsonl"
+min_report_sample = 3
+rotation_max_mb = 50
+retention_days = 365
+
+# --- Discovery ---
+
+[discovery]
+enabled = false
+sources = ["openalex"]
+modes = ["cited-by", "cites"]
+limit = 20
+digest_email = ""
+digest_auto = false
+cache_ttl_hours = 24
+
+[discovery.ranking]
+oa_weight = 1.2
+recency_half_life_years = 2.0
