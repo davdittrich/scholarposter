@@ -81,7 +81,7 @@ class MastodonCollector:
         Note: Uses limit=50. If backlog exceeds 50, only the 50 newest are fetched.
         Run frequently to prevent backlog buildup.
         """
-        kwargs: dict[str, Any] = {"exclude_replies": True, "limit": 50}
+        kwargs: dict[str, Any] = {"limit": 50}
         if since_id is not None:
             kwargs["min_id"] = since_id
 
@@ -157,4 +157,22 @@ class MastodonCollector:
             urls=urls,
             is_sensitive=bool(source.get("sensitive", False)),
             has_poll=source.get("poll") is not None,
+            # is_reply/is_self_thread_reply: always read from outer toot, not source.
+            # For reblogs, the outer toot's in_reply_to_id is null, so boosts are
+            # never classified as replies — intentional.
+            is_reply=(
+                toot.get("in_reply_to_id") is not None
+                and toot.get("in_reply_to_account_id") != toot.get("account", {}).get("id")
+            ),
+            is_self_thread_reply=(
+                toot.get("in_reply_to_id") is not None
+                and toot.get("in_reply_to_account_id") == toot.get("account", {}).get("id")
+            ),
+            # visibility/has_content_warning/has_mention: read from source (inner for boosts).
+            # This reflects the original content's properties, consistent with is_sensitive
+            # and has_poll. For boosts, the inner toot's visibility is used so that
+            # cross-posting a private toot via boost is correctly caught by the "private" filter.
+            visibility=source.get("visibility", "public"),
+            has_content_warning=bool(source.get("spoiler_text", "")),
+            has_mention=len(source.get("mentions", [])) > 0,
         )
