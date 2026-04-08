@@ -6,6 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "scholarposter"
 version = "0.1.0"
 description = "Cross-post from Mastodon to Bluesky and LinkedIn"
+authors = [
+    {name = "Dennis Alexis Valin Dittrich", email = "dd+github@dr-dittrich.de"}
+]
+license = {text = "MIT"}
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28",
