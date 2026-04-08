@@ -5,8 +5,6 @@ import smtplib
 from datetime import date
 from email.message import EmailMessage
 from email.utils import parseaddr
-from loguru import logger
-
 from scholarposter.config import DiscoveryConfig
 from scholarposter.discovery import CandidatePaper
 
@@ -77,9 +75,5 @@ def send_digest(
     msg["To"] = to_addr
     msg.set_content(body)
 
-    try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-            server.send_message(msg)
-    except Exception as e:
-        logger.warning(f"Discovery digest email failed: {e}")
-        raise
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+        server.send_message(msg)

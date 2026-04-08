@@ -277,8 +277,8 @@ class TestSendDigest:
 
         assert smtp_args == [("mail.example.com", 587)]
 
-    def test_smtp_failure_logs_and_reraises(self):
-        """SMTP send_message failure → logged + re-raised."""
+    def test_smtp_failure_reraises(self):
+        """SMTP send_message failure → exception propagates to caller."""
         from scholarposter.discovery.digest import send_digest
         cfg = self._disc_cfg()
 
@@ -288,16 +288,9 @@ class TestSendDigest:
             def __exit__(self, *a): return False
             def send_message(self, msg): raise OSError("connection refused")
 
-        messages = []
-        from loguru import logger
-        sid = logger.add(lambda m: messages.append(m.record["message"]))
-        try:
-            with patch("smtplib.SMTP", FailSMTP):
-                with pytest.raises(OSError, match="connection refused"):
-                    send_digest([_paper()], cfg, date(2026, 4, 7))
-        finally:
-            logger.remove(sid)
-        assert any("digest email failed" in m.lower() for m in messages)
+        with patch("smtplib.SMTP", FailSMTP):
+            with pytest.raises(OSError, match="connection refused"):
+                send_digest([_paper()], cfg, date(2026, 4, 7))
 
     def test_crlf_in_digest_email_stripped(self):
         """CRLF in digest_email is stripped before reaching parseaddr (defense-in-depth).
