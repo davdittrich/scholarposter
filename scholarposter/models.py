@@ -141,6 +141,11 @@ class UnifiedPost(BaseModel):
     links: list[LinkEnrichment] = []
     is_sensitive: bool = False
     has_poll: bool = False
+    is_reply: bool = False
+    is_self_thread_reply: bool = False
+    visibility: str = "public"
+    has_content_warning: bool = False
+    has_mention: bool = False
 
     @property
     def is_media_only(self) -> bool:

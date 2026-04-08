@@ -221,6 +221,43 @@ class TestApplyHashtagRules:
         assert result == "text"
 
 
+class TestUnifiedPostNewFields:
+    """WU-1: Verify the 5 new UnifiedPost fields exist with correct defaults."""
+
+    def test_is_reply_defaults_false(self):
+        post = make_post()
+        assert post.is_reply is False
+
+    def test_is_self_thread_reply_defaults_false(self):
+        post = make_post()
+        assert post.is_self_thread_reply is False
+
+    def test_visibility_defaults_public(self):
+        post = make_post()
+        assert post.visibility == "public"
+
+    def test_has_content_warning_defaults_false(self):
+        post = make_post()
+        assert post.has_content_warning is False
+
+    def test_has_mention_defaults_false(self):
+        post = make_post()
+        assert post.has_mention is False
+
+    def test_new_fields_can_be_set(self):
+        post = make_post(
+            is_reply=True,
+            is_self_thread_reply=False,
+            visibility="private",
+            has_content_warning=True,
+            has_mention=True,
+        )
+        assert post.is_reply is True
+        assert post.visibility == "private"
+        assert post.has_content_warning is True
+        assert post.has_mention is True
+
+
 class TestReblogFilter:
     def test_reblog_filtered_when_configured(self):
         post = make_post(is_reblog=True)
