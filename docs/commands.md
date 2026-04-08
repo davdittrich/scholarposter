@@ -47,6 +47,49 @@ scholarposter retry --platform bluesky --toot-id 123456789 [--dry-run]
 
 Fetches the toot by ID (bypasses timeline pagination), re-enriches, and posts.
 
+### `set-watermark`
+
+Configure the crossposting watermark — the toot after which the next `run` begins.
+
+```bash
+scholarposter set-watermark (--toot-id INT | --toot-url URL | --date YYYY-MM-DD) [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--platform` | `all` | Platform to update: `bluesky`, `linkedin`, or `all` |
+| `--toot-id INT` | — | Set watermark to this toot ID directly |
+| `--toot-url URL` | — | Extract toot ID from a Mastodon URL |
+| `--date YYYY-MM-DD` | — | Find the last toot before midnight UTC on this date (requires Mastodon credentials configured in `config.toml`) |
+| `--dry-run` | off | Print what would be set without writing state (for `--date`, the API lookup still executes) |
+| `--yes` / `-y` | off | Skip confirmation prompt |
+
+Exactly one of `--toot-id`, `--toot-url`, or `--date` is required. Zero or more than one → exits 2 with a usage message.
+
+**Examples:**
+
+```bash
+# Start from a specific toot ID
+scholarposter set-watermark --toot-id 113456789012345678
+
+# Parse the ID from a toot URL
+scholarposter set-watermark --toot-url "https://mastodon.social/@you/113456789012345678"
+
+# Start from the last toot before January 15, 2026
+scholarposter set-watermark --date 2026-01-15
+
+# Preview without writing
+scholarposter set-watermark --date 2026-01-15 --dry-run
+
+# Skip confirmation prompt
+scholarposter set-watermark --toot-id 113456789012345678 --yes
+```
+
+When `--date` finds no toot before the given date (e.g. the account had no toots that early, or
+the date is in the future), the `last_toot_id` key is deleted from `state.json` — the next `run`
+fetches from the beginning of the timeline. The `--date` mode pages up to 20,000 toots (500 pages
+of 40) before giving up.
+
 ### `status`
 
 Show last-posted toot ID, status, pending count, and last error per platform.
