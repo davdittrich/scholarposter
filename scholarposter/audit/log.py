@@ -58,5 +58,5 @@ def build_audit_record(
         "bluesky_reposts": None,
         "engagement_synced_at": None,
         "hashtags": list(post.hashtags),
-        "chunk_count": 1,  # Default; Bluesky multi-chunk populated in future
+        "chunk_count": result.chunk_count,
     }

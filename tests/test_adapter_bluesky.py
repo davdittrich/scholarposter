@@ -709,3 +709,78 @@ class TestBuildFacetsReturnsSDKModels:
             assert isinstance(facet, models.AppBskyRichtextFacet.Main), (
                 f"Expected AppBskyRichtextFacet.Main, got {type(facet)!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# W3: chunk_count in PostResult and audit log
+# ---------------------------------------------------------------------------
+
+def _mock_record():
+    r = MagicMock()
+    r.uri = "at://did:plc:testuser/app.bsky.feed.post/abc123"
+    r.cid = "bafyreitest"
+    return r
+
+
+def _mock_client_for_chunk():
+    client = MagicMock()
+    client.me = MagicMock()
+    client.me.did = "did:plc:testuser"
+    return client
+
+
+# Text that generates exactly 2 chunks at default max_graphemes=300
+_MULTI_CHUNK_TEXT = "A" * 290 + " " + "B" * 290
+
+
+class TestChunkCount:
+    """W3: PostResult.chunk_count must reflect actual number of chunks posted."""
+
+    def test_chunk_count_single_chunk(self):
+        client = _mock_client_for_chunk()
+        client.com.atproto.repo.create_record.return_value = _mock_record()
+        adapter = BlueskyAdapter(client=client)
+        result = adapter.post(make_post("Short text"))
+        assert result.chunk_count == 1
+
+    def test_chunk_count_multi_chunk_success(self):
+        """Success path (bluesky.py line 284): chunk_count reflects all chunks."""
+        client = _mock_client_for_chunk()
+        client.com.atproto.repo.create_record.return_value = _mock_record()
+        adapter = BlueskyAdapter(client=client)
+        result = adapter.post(make_post(_MULTI_CHUNK_TEXT))
+        assert result.status == PostStatus.POSTED
+        assert result.chunk_count == 2
+
+    def test_chunk_count_dry_run_multi_chunk(self):
+        """Dry-run path (bluesky.py line 208): chunk_count is set even without API calls."""
+        client = _mock_client_for_chunk()
+        adapter = BlueskyAdapter(client=client)
+        result = adapter.post(make_post(_MULTI_CHUNK_TEXT), dry_run=True)
+        assert result.status == PostStatus.POSTED
+        assert result.chunk_count == 2
+
+    def test_chunk_count_multi_chunk_partial_failure(self):
+        """Failure path (bluesky.py line 265): chunk_count set even on partial failure."""
+        client = _mock_client_for_chunk()
+        client.com.atproto.repo.create_record.side_effect = [_mock_record(), Exception("chunk 2 fail")]
+        adapter = BlueskyAdapter(client=client)
+        result = adapter.post(make_post(_MULTI_CHUNK_TEXT))
+        assert result.status == PostStatus.FAILED
+        assert result.chunk_count == 2
+
+    def test_chunk_count_in_audit_log(self):
+        """log.py must emit result.chunk_count, not the hardcoded literal 1."""
+        from datetime import datetime, timezone
+        from scholarposter.audit.log import build_audit_record
+        from scholarposter.models import PostResult, PostStatus, UnifiedPost
+
+        post = UnifiedPost(
+            source_id="99",
+            text="Test post",
+            source_url="https://fediscience.org/@u/99",
+            created_at=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        )
+        result = PostResult(platform="bluesky", status=PostStatus.POSTED, chunk_count=3)
+        record = build_audit_record("99", "bluesky", post, result, dry_run=False)
+        assert record["chunk_count"] == 3

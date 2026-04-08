@@ -164,6 +164,7 @@ class PostResult(BaseModel):
     post_url: Optional[str] = None
     error: Optional[str] = None
     retryable: bool = False
+    chunk_count: int = 1
 
     @property
     def is_success(self) -> bool:

@@ -205,7 +205,7 @@ class BlueskyAdapter(BaseAdapter):
         chunks = chunk_text(text)
 
         if dry_run:
-            return PostResult(platform=self.platform_name, status=PostStatus.POSTED)
+            return PostResult(platform=self.platform_name, status=PostStatus.POSTED, chunk_count=len(chunks))
 
         # Determine post-level best link for promotion rule
         post_best_link = None
@@ -266,6 +266,7 @@ class BlueskyAdapter(BaseAdapter):
                     platform=self.platform_name,
                     status=PostStatus.FAILED,
                     error=str(e),
+                    chunk_count=len(chunks),
                 )
 
             if i == 0:
@@ -285,6 +286,7 @@ class BlueskyAdapter(BaseAdapter):
             platform=self.platform_name,
             status=PostStatus.POSTED,
             post_url=post_url,
+            chunk_count=len(chunks),
         )
 
     def _build_image_embed(self, post):
