@@ -47,6 +47,24 @@ scholarposter retry --platform bluesky --toot-id 123456789 [--dry-run]
 
 Fetches the toot by ID (bypasses timeline pagination), re-enriches, and posts.
 
+### `sync-engagement`
+
+Fetch current like and repost counts from Bluesky and write them into `audit.jsonl`.
+
+```bash
+scholarposter sync-engagement [--dry-run] [--force]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--config` | `config.toml` | Path to config file |
+| `--dry-run` | off | Print planned updates without writing |
+| `--force` | off | Re-sync records that already have engagement data |
+
+**Prerequisite:** `[audit] enabled = true` must be set in `config.toml`. The command exits with an error if audit logging is disabled.
+
+Only Bluesky records are synced. LinkedIn records are skipped. Requires `BLUESKY_EMAIL` and `BLUESKY_PASSWORD` in `.env`. Prints `Synced engagement for N posts (M skipped, K errors).`
+
 ### `set-watermark`
 
 Configure the crossposting watermark — the toot after which the next `run` begins.
@@ -214,21 +232,46 @@ triage from the terminal.
 
 ### `discover`
 
-Discover recent papers matching your sharing interests via OpenAlex.
+Traverse the OpenAlex citation graph using your bibliography as seed DOIs.
 
 ```bash
-scholarposter discover [--days N] [--limit N] [--json]
+scholarposter discover [--mode MODE] [--since DATE] [--limit N] [--json] [--wide] [--email-digest]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--days` | 30 | Look back N days for recent papers |
-| `--limit` | 10 | Maximum number of suggestions |
+| `--config` | `config.toml` | Path to config file |
+| `--mode` | (config modes) | Traversal mode: `cited-by`, `cites`, or `all`. `co-cited` is accepted but not yet implemented. |
+| `--since` | (none) | Restrict results to papers published from this date (YYYY-MM-DD) |
+| `--limit` | `10` | Maximum number of suggestions |
 | `--json` | off | Machine-readable JSON output |
+| `--wide` | off | Print full-length titles without truncation |
+| `--email-digest` | off | Send a digest to `discovery.digest_email` after displaying results |
+| `--days N` | (none) | **Deprecated.** Use `--since` instead. |
 
-Analyzes your `bibliography.json` to find authors you share frequently, then
-queries OpenAlex for their recent publications. Excludes papers you've already
-shared. Requires at least one bibliography entry with DOI metadata.
+Requires `[discovery] enabled = true` in `config.toml`. Excludes papers already in `bibliography.json`. Uses the OpenAlex polite pool; set `etiquette_email` in `[enrichment.crossref]` for priority access.
 
-**Operational dependency:** Requires internet access to `api.openalex.org`. Returns
-zero results when the API is unavailable.
+**Operational dependency:** Requires internet access to `api.openalex.org`. Returns zero results when the API is unavailable.
+
+### `audit`
+
+Query the cross-post audit log.
+
+```bash
+scholarposter audit [--platform PLATFORM] [--since DATE] [--until DATE] [--status STATUS] [--limit N] [--json] [--csv]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--config` | `config.toml` | Path to config file |
+| `--platform` | (all) | Filter by platform name (`bluesky`, `linkedin`) |
+| `--since` | (none) | Show records from this date onwards (YYYY-MM-DD) |
+| `--until` | (none) | Show records up to this date, inclusive (YYYY-MM-DD) |
+| `--status` | (all) | Filter by status: `posted`, `failed`, or `dry_run` |
+| `--limit` | (none) | Maximum number of records to display |
+| `--json` | off | Output raw JSON-lines |
+| `--csv` | off | Output CSV |
+
+**Prerequisite:** `[audit] enabled = true` must be set in `config.toml`. The command exits with an error if audit logging is disabled.
+
+The default tabular output shows: timestamp, toot ID, platform, status, DOI, LLM backend used, summary character count, and Bluesky engagement (likes and reposts, if synced).

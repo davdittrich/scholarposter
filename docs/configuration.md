@@ -25,8 +25,10 @@ One section per platform (`bluesky`, `linkedin`).
 | Key | Default | Description |
 |-----|---------|-------------|
 | `skip_hashtags` | `[]` | Skip toots containing any of these (case-insensitive) |
-| `skip_content_types` | `[]` | Skip: `"sensitive"`, `"poll"`, `"media_only"`, `"reblog"` |
-| `require_hashtags` | `[]` | Only post toots with at least one of these; empty = post all |
+| `skip_content_types` | `[]` | Skip toots matching these content types: `"sensitive"`, `"poll"`, `"media_only"`, `"reblog"` |
+| `require_hashtags` | `[]` | Only post toots with at least one of these hashtags; empty list posts everything |
+
+See [filtering.md](filtering.md) for evaluation order, content type definitions, and hashtag rule behavior.
 
 ### `[platforms.<name>.media]`
 
@@ -117,6 +119,12 @@ Fallback is only to cheaper/simpler backends (no wrap-around).
 | `timeout_seconds` | `10` | |
 | `max_redirects` | `5` | |
 
+## `[enrichment.progressive]`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `true` | Skip the PDF download stage for PDF links when Crossref already provides an abstract. Reduces bandwidth for papers whose DOI metadata is sufficient for summarization. |
+
 ---
 
 ## `[[notifications.backends]]`
@@ -179,6 +187,47 @@ State files are resolved relative to the directory containing `config.toml`, not
 working directory. This ensures all commands (`run`, `retry`, `status`, `bibliography`,
 `enrich`, `discover`) read and write the same files regardless of where you invoke
 scholarposter from.
+
+---
+
+## `[audit]`
+
+Records every cross-post attempt as a JSON line in a `.jsonl` file. Required by the
+`audit` and `sync-engagement` commands. Disabled by default.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Write an audit record for each cross-post attempt |
+| `file` | `"audit.jsonl"` | Log file path; resolved relative to the config directory |
+| `min_report_sample` | `3` | Minimum number of records before the `audit` command displays aggregate statistics |
+| `rotation_max_mb` | `50` | Maximum log size in MB before rotation (not yet enforced) |
+| `retention_days` | `365` | Retain records for this many days; older records are deleted (not yet enforced) |
+
+---
+
+## `[discovery]`
+
+Citation graph traversal via OpenAlex. Disabled by default; requires `enabled = true`
+before the `discover` command runs traversal.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Enable citation graph discovery |
+| `sources` | `["openalex"]` | Data sources for graph traversal |
+| `modes` | `["cited-by", "cites"]` | Traversal modes to run by default; valid values: `"cited-by"`, `"cites"`, `"all"` |
+| `limit` | `20` | Maximum number of candidates to return |
+| `digest_email` | (none) | Email address for discovery digests; required when `--email-digest` is passed to `discover` |
+| `digest_auto` | `false` | Send a digest email automatically on every `discover` run |
+| `cache_ttl_hours` | `24` | Time-to-live for cached discovery results, in hours |
+
+### `[discovery.ranking]`
+
+Controls the composite score used to rank candidates. Candidates with higher scores appear first.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `oa_weight` | `1.2` | Multiplier applied to open-access papers in the composite score |
+| `recency_half_life_years` | `2.0` | Exponential decay half-life for the recency component, in years |
 
 ---
 

@@ -235,7 +235,7 @@ See [docs/configuration.md](docs/configuration.md) for the complete reference.
 Key sections:
 
 - `[mastodon]` — instance URL and credentials file
-- `[platforms.bluesky]` / `[platforms.linkedin]` — per-platform filters, media, hashtag rules
+- `[platforms.bluesky]` / `[platforms.linkedin]` — per-platform filters, media, hashtag rules (see [docs/filtering.md](docs/filtering.md))
 - `[enrichment]` — DOI lookup, summarization (4 backends), URL unshortening
 - `[[notifications.backends]]` — failure alerts (ntfy, signal, email)
 - `[logging]` / `[state]` — log rotation, state file paths
