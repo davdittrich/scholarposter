@@ -5,7 +5,6 @@ import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from scholarposter.cli import app
@@ -16,23 +15,23 @@ runner = CliRunner()
 # Controlled example TOML fixture (isolated from real shipped file)
 # ---------------------------------------------------------------------------
 
-_EXAMPLE_RAW = (
-    '[mastodon]\n'
-    'instance = "https://mastodon.social"\n'
-    'credentials_file = ""\n'
-    '\n'
-    '[logging]\n'
-    'level = "INFO"\n'
-    'rotation = "10 MB"\n'
-    '\n'
-    '[audit]\n'
-    'enabled = false\n'
-    'file = "audit.jsonl"\n'
-    '\n'
-    '[discovery]\n'
-    'enabled = false\n'
-    'limit = 20\n'
-)
+_EXAMPLE_RAW = """\
+[mastodon]
+instance = "https://mastodon.social"
+credentials_file = ""
+
+[logging]
+level = "INFO"
+rotation = "10 MB"
+
+[audit]
+enabled = false
+file = "audit.jsonl"
+
+[discovery]
+enabled = false
+limit = 20
+"""
 
 
 def _patch_example(raw=_EXAMPLE_RAW):
@@ -151,7 +150,7 @@ class TestT34DryRun:
         with _patch_example():
             result = runner.invoke(app, ["config-update", "--config", str(cfg), "--dry-run"])
         assert result.exit_code == 0
-        assert "config-update" in result.output  # sentinel line in output
+        assert "# --- config-update:" in result.output
         assert cfg.read_bytes() == original
 
 
@@ -200,6 +199,7 @@ class TestT35Diff:
         assert cfg2.read_bytes() == orig2
         assert "+++" in r1.output
         assert "+++" in r2.output
+        assert r1.output == r2.output
 
 
 # ---------------------------------------------------------------------------
@@ -350,34 +350,6 @@ class TestT41RoundTrip:
 # T-42: Cross-version idempotency — previously appended key not duplicated
 # ---------------------------------------------------------------------------
 
-class TestCrossSectionFalsePositive:
-    def test_shared_key_name_not_suppressed_across_sections(self, tmp_path):
-        """Regression: 'enabled' commented in section A must not suppress section B's 'enabled'."""
-        # audit was appended with # enabled = false
-        # discovery is entirely absent and also needs 'enabled'
-        cfg = _cfg(tmp_path, (
-            '[mastodon]\n'
-            'instance = "https://mastodon.social"\n'
-            'credentials_file = ""\n'
-            '\n'
-            '[logging]\n'
-            'level = "INFO"\n'
-            'rotation = "10 MB"\n'
-            '\n'
-            '# --- config-update: audit ---\n'
-            '# Added by scholarposter config-update 1.0.0 — audit\n'
-            '# [audit]\n'
-            '# enabled = false\n'
-            '# file = "audit.jsonl"\n'
-        ))
-        with _patch_example():
-            result = runner.invoke(app, ["config-update", "--config", str(cfg)])
-        assert result.exit_code == 0
-        content = cfg.read_text(encoding="utf-8")
-        # discovery must still be appended (its 'enabled' is separate from audit's)
-        assert "# --- config-update: discovery ---" in content
-
-
 class TestT42CrossVersionIdempotency:
     def test_previously_appended_key_not_duplicated(self, tmp_path):
         """T-42: key_a appended by v1.2.0; v1.3.0 no new keys → no-op."""
@@ -463,3 +435,35 @@ class TestT44SensitiveRedaction:
             result = runner.invoke(app, ["config-update", "--config", str(cfg), "--dry-run"])
         assert result.exit_code == 0
         assert '# smtp_password = "<redacted>"' in result.output
+
+
+# ---------------------------------------------------------------------------
+# Regression: cross-section false positive on shared key names
+# ---------------------------------------------------------------------------
+
+class TestCrossSectionFalsePositive:
+    def test_shared_key_name_not_suppressed_across_sections(self, tmp_path):
+        """Regression: 'enabled' commented in section A must not suppress section B's 'enabled'."""
+        # audit was appended with # enabled = false
+        # discovery is entirely absent and also needs 'enabled'
+        cfg = _cfg(tmp_path, (
+            '[mastodon]\n'
+            'instance = "https://mastodon.social"\n'
+            'credentials_file = ""\n'
+            '\n'
+            '[logging]\n'
+            'level = "INFO"\n'
+            'rotation = "10 MB"\n'
+            '\n'
+            '# --- config-update: audit ---\n'
+            '# Added by scholarposter config-update 1.0.0 — audit\n'
+            '# [audit]\n'
+            '# enabled = false\n'
+            '# file = "audit.jsonl"\n'
+        ))
+        with _patch_example():
+            result = runner.invoke(app, ["config-update", "--config", str(cfg)])
+        assert result.exit_code == 0
+        content = cfg.read_text(encoding="utf-8")
+        # discovery must still be appended (its 'enabled' is separate from audit's)
+        assert "# --- config-update: discovery ---" in content

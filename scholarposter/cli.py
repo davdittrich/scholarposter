@@ -712,9 +712,7 @@ def _format_toml_value(v: Any) -> str:
     """Return a TOML-valid string representation of v (no quoting of non-strings)."""
     if isinstance(v, bool):
         return "true" if v else "false"
-    elif isinstance(v, int):
-        return str(v)
-    elif isinstance(v, float):
+    elif isinstance(v, (int, float)):
         return str(v)
     elif isinstance(v, str):
         escaped = v.replace("\\", "\\\\").replace('"', '\\"')
@@ -779,6 +777,7 @@ def _build_append_block(
             lines.append(f"# [{section_path}]")
         for k, v in remaining:
             lines.append(f"# {k} = {_redact_toml_value(k, _format_toml_value(v))}")
+        lines.append("")
 
     if len(lines) <= 1:
         return ""
@@ -802,15 +801,15 @@ def config_update_cmd(
 ) -> None:
     """Append missing config keys (commented out) from config.example.toml."""
     try:
-        example_raw, example_parsed = _load_example_config()
+        _, example_parsed = _load_example_config()
     except FileNotFoundError:
         typer.echo("Shipped example config not found — reinstall the package", err=True)
         raise typer.Exit(code=1)
 
     if config.exists():
-        with open(config, "rb") as f:
-            user_parsed: dict = tomllib.load(f)
-        user_raw = config.read_text(encoding="utf-8")
+        raw_bytes = config.read_bytes()
+        user_raw = raw_bytes.decode("utf-8")
+        user_parsed: dict = tomllib.loads(user_raw)
     else:
         user_parsed = {}
         user_raw = ""
@@ -820,7 +819,7 @@ def config_update_cmd(
     block = _build_append_block(missing, user_raw, user_parsed, version)
 
     if not block:
-        typer.echo("config.toml is up to date")
+        typer.echo(f"{config} is up to date")
         return
 
     new_content = user_raw + block
