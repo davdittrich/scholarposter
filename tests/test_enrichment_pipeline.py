@@ -11,6 +11,7 @@ from scholarposter.state import StateManager
 def _mock_html_client(html_text: str):
     """Build a mock httpx.Client that streams the given HTML text."""
     mock_stream = MagicMock()
+    mock_stream.status_code = 200
     mock_stream.iter_text.return_value = [html_text]
     mock_stream_ctx = MagicMock()
     mock_stream_ctx.__enter__ = MagicMock(return_value=mock_stream)
@@ -277,6 +278,7 @@ class TestHtmlSizeGuard:
         # Build a mock client that yields one chunk just over the limit
         large_chunk = "x" * (_MAX_HTML_BYTES + 1)
         mock_stream = MagicMock()
+        mock_stream.status_code = 200
         mock_stream.iter_text.return_value = [large_chunk]
         mock_stream_ctx = MagicMock()
         mock_stream_ctx.__enter__ = MagicMock(return_value=mock_stream)
@@ -664,3 +666,52 @@ class TestEnrichmentMetadataFields:
         """LinkEnrichment.enrichment_path is [] by default."""
         link = LinkEnrichment(original_url="https://example.com")
         assert link.enrichment_path == []
+
+
+class TestHttpErrorGuard:
+    """Discriminating: HTTP 4xx/5xx response bodies must not leak into description or summary."""
+
+    def _mock_error_client(self, status_code: int, body: str = "403 Forbidden"):
+        mock_stream = MagicMock()
+        mock_stream.status_code = status_code
+        mock_stream.iter_text.return_value = [body]
+        mock_stream_ctx = MagicMock()
+        mock_stream_ctx.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream_ctx.__exit__ = MagicMock(return_value=False)
+        mock_client = MagicMock()
+        mock_client.stream.return_value = mock_stream_ctx
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        return mock_client
+
+    def test_403_response_body_not_stored_as_description(self, config, state):
+        """Discriminating: OLD stores 403 body as og_description; NEW skips enrichment on HTTP error."""
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", side_effect=lambda u, **kw: u),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=self._mock_error_client(403, "<p>403 Forbidden</p>")),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://restricted.example.com/paper"])
+            result = pipeline.enrich(post)
+        link = result.links[0]
+        assert link.description is None or "403" not in (link.description or "")
+        assert link.body_text is None or "403" not in (link.body_text or "")
+
+    def test_500_response_body_not_stored(self, config, state):
+        """HTTP 500 error body must not be used as page content."""
+        pipeline = EnrichmentPipeline(config=config, cache=state)
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", side_effect=lambda u, **kw: u),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=self._mock_error_client(500, "<p>Internal Server Error</p>")),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+        ):
+            post = make_post(urls=["https://example.com/paper"])
+            result = pipeline.enrich(post)
+        link = result.links[0]
+        assert link.description is None or "Internal Server Error" not in (link.description or "")
+        assert link.body_text is None or "Internal Server Error" not in (link.body_text or "")

@@ -211,6 +211,9 @@ class EnrichmentPipeline:
         try:
             with httpx.Client(timeout=10, follow_redirects=True) as client:
                 with client.stream("GET", url) as resp:
+                    if resp.status_code >= 400:
+                        logger.warning(f"HTML fetch returned HTTP {resp.status_code} for {url}, skipping")
+                        return link
                     chunks: list[str] = []
                     total = 0
                     for chunk in resp.iter_text(4096):
