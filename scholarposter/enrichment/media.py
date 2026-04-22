@@ -88,37 +88,44 @@ def generate_card_thumbnail(title: str, subtitle: str, cfg: "ThumbnailFallbackCo
     from PIL import ImageDraw, ImageFont
     img = Image.new("RGB", (cfg.width, cfg.height), color=cfg.background_color)
     draw = ImageDraw.Draw(img)
+    # Sizes chosen so text is legible at LinkedIn's ~160x83 display size.
+    # At 1200px canvas → 160px display (scale 0.133): 200px → 27px, 80px → 11px.
     try:
-        title_font = ImageFont.load_default(size=72)
-        sub_font = ImageFont.load_default(size=40)
-        brand_font = ImageFont.load_default(size=28)
+        title_font = ImageFont.load_default(size=200)
+        brand_font = ImageFont.load_default(size=80)
     except TypeError:
-        title_font = sub_font = brand_font = ImageFont.load_default()
+        title_font = brand_font = ImageFont.load_default()
 
+    pad = 80
+    max_width = cfg.width - pad * 2
     words = title.split()
-    lines, line = [], []
+    lines: list[str] = []
+    line: list[str] = []
     for word in words:
-        line.append(word)
-        if draw.textlength(" ".join(line), font=title_font) > cfg.width - 120:
-            if len(line) > 1:
-                lines.append(" ".join(line[:-1]))
+        candidate = " ".join(line + [word])
+        if draw.textlength(candidate, font=title_font) > max_width:
+            if line:
+                lines.append(" ".join(line))
                 line = [word]
             else:
-                lines.append(" ".join(line))
-                line = []
+                lines.append(word)
+        else:
+            line.append(word)
         if len(lines) >= 2:
             break
-    if line:
+    if line and len(lines) < 2:
         lines.append(" ".join(line))
     lines = lines[:2]
 
-    y = 80
+    # Vertically centre the title block
+    line_h = 230  # 200px font + 30px leading
+    block_h = len(lines) * line_h - 30
+    y = (cfg.height - block_h) // 2 - 40
     for ln in lines:
-        draw.text((60, y), ln, font=title_font, fill=cfg.text_color)
-        y += 90
-    if subtitle:
-        draw.text((60, y + 20), subtitle, font=sub_font, fill=cfg.text_color)
-    draw.text((cfg.width - 220, cfg.height - 40), "⚗️ scholarposter", font=brand_font, fill=cfg.text_color)
+        draw.text((pad, y), ln, font=title_font, fill=cfg.text_color)
+        y += line_h
+
+    draw.text((pad, cfg.height - 90), "scholarposter", font=brand_font, fill=cfg.text_color)
 
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
