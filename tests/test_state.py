@@ -273,6 +273,86 @@ class TestUpdatePlatformStateMerge:
         state = mgr.load_state()
         assert "refresh_warning_last_sent" not in state["linkedin"]
 
+    def test_failure_appends_to_recent_errors(self, mgr):
+        """Single failure call → raw state dict has 'recent_errors' list of length 1."""
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=101, last_status="failed", last_error="connection refused"),
+        )
+        state = mgr.load_state()
+        errors = state["bluesky"].get("recent_errors")
+        assert errors is not None, "recent_errors must be present after a failure"
+        assert len(errors) == 1
+        assert errors[0]["toot_id"] == "101"
+        assert errors[0]["error"] == "connection refused"
+        assert "timestamp" in errors[0]
+
+    def test_multiple_failures_accumulate(self, mgr):
+        """Two failure calls with different toot IDs → list length 2, IDs in call order."""
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=200, last_status="failed", last_error="err A"),
+        )
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=201, last_status="failed", last_error="err B"),
+        )
+        state = mgr.load_state()
+        errors = state["bluesky"]["recent_errors"]
+        assert len(errors) == 2
+        assert errors[0]["toot_id"] == "200"
+        assert errors[1]["toot_id"] == "201"
+
+    def test_success_clears_recent_errors(self, mgr):
+        """Two failures then a posted success → 'recent_errors' key absent from state."""
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=300, last_status="failed", last_error="boom"),
+        )
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=301, last_status="failed", last_error="boom2"),
+        )
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=302, last_status="posted", last_error=None),
+        )
+        state = mgr.load_state()
+        assert "recent_errors" not in state["bluesky"]
+
+    def test_recent_errors_capped_at_20(self, mgr):
+        """25 failure calls → list length exactly 20 (oldest 5 dropped)."""
+        for i in range(25):
+            mgr.update_platform_state(
+                "bluesky",
+                PlatformState(last_toot_id=i, last_status="failed", last_error=f"err {i}"),
+            )
+        state = mgr.load_state()
+        errors = state["bluesky"]["recent_errors"]
+        assert len(errors) == 20
+        # Oldest 5 (toot_ids 0-4) dropped; newest 20 (5-24) remain
+        assert errors[0]["toot_id"] == "5"
+        assert errors[-1]["toot_id"] == "24"
+
+    def test_skipped_status_does_not_clear_recent_errors(self, mgr):
+        """Two failures then a skipped call → 'recent_errors' still present with 2 entries."""
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=400, last_status="failed", last_error="fail A"),
+        )
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=401, last_status="failed", last_error="fail B"),
+        )
+        mgr.update_platform_state(
+            "bluesky",
+            PlatformState(last_toot_id=402, last_status="skipped", last_error=None),
+        )
+        state = mgr.load_state()
+        errors = state["bluesky"].get("recent_errors")
+        assert errors is not None, "recent_errors must survive a skipped status"
+        assert len(errors) == 2
+
 
 class TestUpdatePlatformStateLockWarning:
     def test_warning_logged_when_called_without_lock(self, mgr):

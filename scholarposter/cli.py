@@ -532,6 +532,13 @@ def status(
             f"pending={pending}, "
             f"last_error={data.get('last_error')}{extra}"
         )
+        if errors := data.get("recent_errors"):
+            typer.echo(f"  Recent failures ({len(errors)}):")
+            for e in errors[-10:]:
+                ts = e.get("timestamp", "")[:16]
+                tid = e.get("toot_id", "?")
+                err = (e.get("error") or "?")[:120]
+                typer.echo(f"    [{ts}] toot {tid}: {err}")
 
 
 @app.command()

@@ -112,7 +112,7 @@ of 40) before giving up.
 
 ### `status`
 
-Show last-posted toot ID, status, pending count, and last error per platform.
+Show last-posted toot ID, status, pending count, last error, and recent failure history per platform.
 
 ```bash
 scholarposter status
@@ -120,6 +120,11 @@ scholarposter status
 
 Queries the Mastodon API for pending toot count (up to 50). Pending shows `?` if
 the API is unreachable.
+
+When a platform has accumulated failure history, `status` shows a `Recent failures (N):` block
+immediately after the per-platform line, listing the last 10 failures with timestamp, toot ID,
+and error message (truncated to 120 characters). Failure history accumulates across runs (capped
+at 20 entries) and is cleared automatically on the next successful post.
 
 ### `scholarposter auth linkedin`
 

@@ -728,6 +728,48 @@ class TestStatusCommand:
             result = runner.invoke(app, ["status", "--config", str(config_file)])
         assert "pending=?" in result.output
 
+    def test_status_shows_recent_errors(self, tmp_path):
+        """status output contains 'Recent failures' and the toot ID when recent_errors present."""
+        import json
+        state_file = tmp_path / "state.json"
+        # Write state directly to inject recent_errors (the list is outside PlatformState)
+        state_data = {
+            "bluesky": {
+                "last_toot_id": 500,
+                "last_status": "failed",
+                "last_error": "network timeout",
+                "recent_errors": [
+                    {
+                        "toot_id": "500",
+                        "error": "network timeout",
+                        "timestamp": "2026-04-22T10:00:00+00:00",
+                    }
+                ],
+            }
+        }
+        state_file.write_text(json.dumps(state_data))
+
+        from scholarposter.state import StateManager as RealSM
+
+        with (
+            patch("scholarposter.cli.load_config") as mock_cfg,
+            patch("scholarposter.cli.StateManager") as mock_sm_cls,
+            patch("scholarposter.cli.Mastodon"),
+        ):
+            mock_cfg.return_value.state.state_file = str(state_file)
+            mock_cfg.return_value.logging.level = "INFO"
+            mock_cfg.return_value.mastodon.credentials_file = "t.secret"
+            mock_cfg.return_value.mastodon.instance = "https://fediscience.org"
+            real_sm = RealSM(state_dir=tmp_path, state_file=str(state_file))
+            mock_sm_cls.return_value = real_sm
+            config_file = tmp_path / "config.toml"
+            config_file.write_text(_BASE_TOML)
+            result = runner.invoke(app, ["status", "--config", str(config_file)])
+
+        assert result.exit_code == 0
+        assert "Recent failures" in result.output
+        assert "500" in result.output
+
 
 # ---------------------------------------------------------------------------
 # _print_masked_config list-of-dicts
