@@ -60,13 +60,13 @@ class LinkedInAdapter(BaseAdapter):
         # Article thumbnail is required by LinkedIn — fail fast if unavailable
         article_thumbnail_urn: Optional[str] = None
         if not image_urn and unified_post.links:
-            _best = max(unified_post.links, key=lambda item: item.enrichment_rank)
             if not self._media_cfg.enabled:
                 return PostResult(
                     platform=self.platform_name,
                     status=PostStatus.FAILED,
                     error="LinkedIn article post requires thumbnail but media.enabled=False",
                 )
+            _best = max(unified_post.links, key=lambda item: item.enrichment_rank)
             if not _best.thumbnail_bytes:
                 return PostResult(
                     platform=self.platform_name,
@@ -75,7 +75,7 @@ class LinkedInAdapter(BaseAdapter):
                 )
             try:
                 article_thumbnail_urn = self._upload_image(_best.thumbnail_bytes)
-            except Exception as e:
+            except (httpx.HTTPError, ValueError) as e:
                 return PostResult(
                     platform=self.platform_name,
                     status=PostStatus.FAILED,
