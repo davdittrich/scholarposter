@@ -4,7 +4,7 @@ from unittest.mock import patch
 import httpx
 import respx
 from scholarposter.adapters.linkedin import LinkedInAdapter
-from scholarposter.config import MediaConfig
+from scholarposter.config import EnrichmentConfig, MediaConfig, ThumbnailFallbackConfig
 from scholarposter.models import UnifiedPost, MediaAttachment, LinkEnrichment, PostStatus
 
 
@@ -268,15 +268,20 @@ class TestArticleThumbnailAndTitle:
         assert result.status == PostStatus.FAILED
         assert result.error and "thumbnail" in result.error.lower()
 
-    # ── test 6: bytes=None → FAILED with "thumbnail" in error ───────────────
+    # ── test 6: bytes=None, fallback disabled → FAILED (T-47) ───────────────
 
     def test_article_no_bytes_returns_failed(self):
-        """Discriminating: link present, bytes=None → FAILED before calling posts API."""
+        """Discriminating: link present, bytes=None, fallback disabled → FAILED before posts API."""
         link = LinkEnrichment(
             original_url="https://example.com/paper",
             thumbnail_bytes=None,
         )
-        adapter = self._adapter()
+        adapter = LinkedInAdapter(
+            access_token="tok",
+            owner_urn="urn:li:person:test",
+            media_config=MediaConfig(enabled=True),
+            enrichment_cfg=EnrichmentConfig(thumbnail_fallback=ThumbnailFallbackConfig(enabled=False)),
+        )
         post = make_post("link post", links=[link])
         with patch("scholarposter.adapters.linkedin.httpx.Client") as mock_client:
             result = adapter.post(post)

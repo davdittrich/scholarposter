@@ -257,7 +257,7 @@ def run(
 
             post = pipeline.enrich(post)
 
-            result = _dispatch_post(plat, post, plat_cfg, dry_run, state_mgr=state_mgr, env_path=env_path)
+            result = _dispatch_post(plat, post, plat_cfg, dry_run, cfg=cfg, state_mgr=state_mgr, env_path=env_path)
 
             # Retry on transient errors (429, 5xx)
             for attempt in range(2):
@@ -265,7 +265,7 @@ def run(
                     break
                 logger.info(f"[{plat}] Retrying ({attempt+1}/2) after transient error")
                 time.sleep(2 ** attempt)
-                result = _dispatch_post(plat, post, plat_cfg, dry_run, state_mgr=state_mgr, env_path=env_path)
+                result = _dispatch_post(plat, post, plat_cfg, dry_run, cfg=cfg, state_mgr=state_mgr, env_path=env_path)
 
             # FR-90: audit log — one record per (toot, platform), outside dry_run guard
             if cfg.audit.enabled:
@@ -361,6 +361,7 @@ def _dispatch_post(
     post: UnifiedPost,
     plat_cfg: PlatformConfig,
     dry_run: bool,
+    cfg: Optional[ScholarposterConfig] = None,
     state_mgr: Optional[StateManager] = None,
     env_path: Optional[Path] = None,
 ) -> PostResult:
@@ -400,7 +401,12 @@ def _dispatch_post(
                 error="Missing LINKEDIN_ACCESS_TOKEN or LINKEDIN_OWNER_URN env vars",
             )
         from scholarposter.adapters.linkedin import LinkedInAdapter
-        adapter = LinkedInAdapter(access_token=token, owner_urn=owner, media_config=plat_cfg.media)
+        adapter = LinkedInAdapter(
+            access_token=token,
+            owner_urn=owner,
+            media_config=plat_cfg.media,
+            enrichment_cfg=cfg.enrichment if cfg else None,
+        )
     else:
         return PostResult(platform=platform, status=PostStatus.SKIPPED)
 
@@ -598,7 +604,7 @@ def retry(
         raw_toot = mastodon.status(toot_id)
         post = collector.toot_to_unified_post(raw_toot)
         post = pipeline.enrich(post)
-        result = _dispatch_post(platform, post, plat_cfg, dry_run, state_mgr=state_mgr, env_path=env_path)
+        result = _dispatch_post(platform, post, plat_cfg, dry_run, cfg=cfg, state_mgr=state_mgr, env_path=env_path)
 
         # FR-37: set last_posted_at on success; last_error on failure
         # Dry-run: adapter still returns POSTED but we do NOT persist state

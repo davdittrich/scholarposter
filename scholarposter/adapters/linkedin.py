@@ -9,7 +9,7 @@ from loguru import logger
 
 from scholarposter.adapters.base import BaseAdapter
 from scholarposter.config import MediaConfig
-from scholarposter.enrichment.media import download_media
+from scholarposter.enrichment.media import download_media, generate_card_thumbnail
 from scholarposter.models import PostResult, PostStatus, UnifiedPost
 
 _API_BASE = "https://api.linkedin.com"
@@ -23,10 +23,13 @@ class LinkedInAdapter(BaseAdapter):
         access_token: str,
         owner_urn: str,
         media_config: Optional[MediaConfig] = None,
+        enrichment_cfg: Optional["EnrichmentConfig"] = None,
     ):
         self._token = access_token
         self._owner = owner_urn
         self._media_cfg: MediaConfig = media_config or MediaConfig()
+        from scholarposter.config import EnrichmentConfig as _EC
+        self._enrichment_cfg = enrichment_cfg or _EC()
 
     @property
     def platform_name(self) -> str:
@@ -67,6 +70,16 @@ class LinkedInAdapter(BaseAdapter):
                     error="LinkedIn article post requires thumbnail but media.enabled=False",
                 )
             _best = max(unified_post.links, key=lambda item: item.enrichment_rank)
+            if self._enrichment_cfg.thumbnail_fallback.enabled and not _best.thumbnail_bytes:
+                try:
+                    _subtitle = urlparse(_best.resolved_url or _best.original_url).netloc
+                    _best = _best.model_copy(update={
+                        "thumbnail_bytes": generate_card_thumbnail(
+                            _best.card_title or "", _subtitle, self._enrichment_cfg.thumbnail_fallback
+                        )
+                    })
+                except Exception:
+                    logger.warning("Thumbnail fallback generation failed; proceeding to fail-fast")
             if not _best.thumbnail_bytes:
                 return PostResult(
                     platform=self.platform_name,
