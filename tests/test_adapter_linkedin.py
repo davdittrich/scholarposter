@@ -44,6 +44,7 @@ class TestLinkedInAdapter:
 
     @respx.mock
     def test_article_post_with_link(self):
+        """Updated: thumbnail_bytes required; mock _upload_image and posts API."""
         respx.post("https://api.linkedin.com/rest/posts").mock(
             return_value=httpx.Response(201, headers={"x-restli-id": "urn:li:share:5678"})
         )
@@ -51,10 +52,16 @@ class TestLinkedInAdapter:
             original_url="https://example.com/paper",
             title="Test Paper",
             description="An important paper",
+            thumbnail_bytes=b"IMGDATA",
         )
-        adapter = LinkedInAdapter(access_token="test_token", owner_urn="urn:li:person:abc123")
+        adapter = LinkedInAdapter(
+            access_token="test_token",
+            owner_urn="urn:li:person:abc123",
+            media_config=MediaConfig(enabled=True),
+        )
         post = make_post("Check this out", links=[link])
-        result = adapter.post(post)
+        with patch.object(adapter, '_upload_image', return_value="urn:li:image:5678"):
+            result = adapter.post(post)
         assert result.status == PostStatus.POSTED
 
     @respx.mock
@@ -153,3 +160,143 @@ class TestCardDescriptionInPayload:
         )
         payload = adapter._build_payload(post, image_urn=None)
         assert payload["content"]["article"]["source"] == "https://doi.org/10.1000/x"
+
+
+class TestArticleThumbnailAndTitle:
+    """WU-1: LinkedIn article payload — required title + thumbnail ImageUrn."""
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _adapter(media_enabled: bool = True) -> LinkedInAdapter:
+        return LinkedInAdapter(
+            access_token="tok",
+            owner_urn="urn:li:person:test",
+            media_config=MediaConfig(enabled=media_enabled),
+        )
+
+    # ── test 1: title netloc fallback when card_title is "" ──────────────────
+
+    def test_article_title_always_present_when_no_card_title(self):
+        """Discriminating: OLD omits 'title'; NEW uses netloc fallback."""
+        adapter = self._adapter()
+        post = UnifiedPost(
+            source_id="1",
+            text="no title link",
+            source_url="https://x.com/1",
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            links=[LinkEnrichment(original_url="https://example.com/paper")],
+        )
+        # No title, no crossref_title → card_title == ""
+        payload = adapter._build_payload(post, image_urn=None, article_thumbnail_urn=None)
+        article = payload["content"]["article"]
+        assert "title" in article, "title key must always be present"
+        assert article["title"] == "example.com"
+
+    # ── test 2: title present when card_title truthy (regression guard) ──────
+
+    def test_article_title_present_when_card_title_truthy(self):
+        """Regression guard: crossref_title → article['title']."""
+        adapter = self._adapter()
+        post = UnifiedPost(
+            source_id="1",
+            text="paper",
+            source_url="https://x.com/1",
+            created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            links=[LinkEnrichment(
+                original_url="https://example.com/paper",
+                crossref_title="Paper X",
+            )],
+        )
+        payload = adapter._build_payload(post, image_urn=None, article_thumbnail_urn=None)
+        assert payload["content"]["article"]["title"] == "Paper X"
+
+    # ── test 3: thumbnailUrl must NOT appear; bytes=None → FAILED ────────────
+
+    def test_article_no_thumbnailUrl_field(self):
+        """Discriminating: OLD sets thumbnailUrl; NEW must not; also FAILED when bytes=None."""
+        adapter = self._adapter()
+        link = LinkEnrichment(
+            original_url="https://example.com/paper",
+            thumbnail_url="https://example.com/img.jpg",
+            thumbnail_bytes=None,
+        )
+        post = make_post("link post", links=[link])
+        result = adapter.post(post)
+        assert result.status == PostStatus.FAILED
+        assert result.error and "thumbnail" in result.error.lower()
+
+    # ── test 4: thumbnail uploaded → article["thumbnail"] = urn ─────────────
+
+    @respx.mock
+    def test_article_thumbnail_uploaded_when_bytes_present(self):
+        """Discriminating: when bytes present, article gets 'thumbnail' URN; no thumbnailUrl."""
+        respx.post("https://api.linkedin.com/rest/posts").mock(
+            return_value=httpx.Response(201, headers={"x-restli-id": "urn:li:share:X"})
+        )
+        link = LinkEnrichment(
+            original_url="https://example.com/paper",
+            thumbnail_bytes=b"IMGDATA",
+            title="Paper",
+        )
+        adapter = self._adapter()
+        post = make_post("link post", links=[link])
+        with patch.object(adapter, '_upload_image', return_value="urn:li:image:ABC") as mock_up:
+            result = adapter.post(post)
+            mock_up.assert_called_once_with(b"IMGDATA")
+        assert result.status == PostStatus.POSTED
+        # Verify payload via _build_payload directly with the urn
+        payload = adapter._build_payload(post, image_urn=None, article_thumbnail_urn="urn:li:image:ABC")
+        article = payload["content"]["article"]
+        assert article.get("thumbnail") == "urn:li:image:ABC"
+        assert "thumbnailUrl" not in article
+
+    # ── test 5: upload raises → FAILED, post API never called ────────────────
+
+    def test_article_thumbnail_upload_failure_returns_failed(self):
+        """Discriminating: _upload_image raises → PostStatus.FAILED; no post API call."""
+        link = LinkEnrichment(
+            original_url="https://example.com/paper",
+            thumbnail_bytes=b"IMGDATA",
+        )
+        adapter = self._adapter()
+        post = make_post("link post", links=[link])
+        with patch.object(adapter, '_upload_image', side_effect=httpx.HTTPError("timeout")):
+            with patch("scholarposter.adapters.linkedin.httpx.Client") as mock_client:
+                result = adapter.post(post)
+                # httpx.Client should not be called for the posts API
+                mock_client.assert_not_called()
+        assert result.status == PostStatus.FAILED
+        assert result.error and "thumbnail" in result.error.lower()
+
+    # ── test 6: bytes=None → FAILED with "thumbnail" in error ───────────────
+
+    def test_article_no_bytes_returns_failed(self):
+        """Discriminating: link present, bytes=None → FAILED before calling posts API."""
+        link = LinkEnrichment(
+            original_url="https://example.com/paper",
+            thumbnail_bytes=None,
+        )
+        adapter = self._adapter()
+        post = make_post("link post", links=[link])
+        with patch("scholarposter.adapters.linkedin.httpx.Client") as mock_client:
+            result = adapter.post(post)
+            mock_client.assert_not_called()
+        assert result.status == PostStatus.FAILED
+        assert result.error and "thumbnail" in result.error.lower()
+
+    # ── test 7: media.enabled=False → FAILED with "media.enabled=False" ──────
+
+    def test_article_media_disabled_returns_failed(self):
+        """Discriminating: media disabled → FAILED before posts API."""
+        link = LinkEnrichment(
+            original_url="https://example.com/paper",
+            thumbnail_bytes=b"IMGDATA",
+        )
+        adapter = self._adapter(media_enabled=False)
+        post = make_post("link post", links=[link])
+        with patch("scholarposter.adapters.linkedin.httpx.Client") as mock_client:
+            result = adapter.post(post)
+            mock_client.assert_not_called()
+        assert result.status == PostStatus.FAILED
+        assert result.error and "media.enabled=False" in result.error

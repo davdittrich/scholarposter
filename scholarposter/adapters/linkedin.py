@@ -57,8 +57,33 @@ class LinkedInAdapter(BaseAdapter):
             except Exception as e:
                 logger.warning(f"LinkedIn image upload failed: {e}")
 
+        # Article thumbnail is required by LinkedIn — fail fast if unavailable
+        article_thumbnail_urn: Optional[str] = None
+        if not image_urn and unified_post.links:
+            _best = max(unified_post.links, key=lambda item: item.enrichment_rank)
+            if not self._media_cfg.enabled:
+                return PostResult(
+                    platform=self.platform_name,
+                    status=PostStatus.FAILED,
+                    error="LinkedIn article post requires thumbnail but media.enabled=False",
+                )
+            if not _best.thumbnail_bytes:
+                return PostResult(
+                    platform=self.platform_name,
+                    status=PostStatus.FAILED,
+                    error="LinkedIn article post requires thumbnail but link has no thumbnail bytes",
+                )
+            try:
+                article_thumbnail_urn = self._upload_image(_best.thumbnail_bytes)
+            except Exception as e:
+                return PostResult(
+                    platform=self.platform_name,
+                    status=PostStatus.FAILED,
+                    error=f"LinkedIn article thumbnail upload failed: {e}",
+                )
+
         # Build post payload
-        payload = self._build_payload(unified_post, image_urn)
+        payload = self._build_payload(unified_post, image_urn, article_thumbnail_urn)
 
         try:
             with httpx.Client(timeout=30) as client:
@@ -120,7 +145,12 @@ class LinkedInAdapter(BaseAdapter):
 
         return image_urn
 
-    def _build_payload(self, post: UnifiedPost, image_urn: Optional[str]) -> dict[str, Any]:
+    def _build_payload(
+        self,
+        post: UnifiedPost,
+        image_urn: Optional[str],
+        article_thumbnail_urn: Optional[str] = None,
+    ) -> dict[str, Any]:
         """Build the LinkedIn Community Management API post payload."""
         text = post.text
         if len(text) > _LI_MAX_CHARS:
@@ -151,12 +181,11 @@ class LinkedInAdapter(BaseAdapter):
             article: dict[str, Any] = {"source": url}
             card_title = link.card_title
             card_desc = link.card_description
-            if card_title:
-                article["title"] = card_title
+            article["title"] = card_title or urlparse(url).netloc
             if card_desc:
                 article["description"] = card_desc
-            if link.thumbnail_url:
-                article["thumbnailUrl"] = link.thumbnail_url
+            if article_thumbnail_urn:
+                article["thumbnail"] = article_thumbnail_urn
             payload["content"] = {"article": article}
 
         return payload
