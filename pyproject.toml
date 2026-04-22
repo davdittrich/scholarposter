@@ -18,7 +18,7 @@ dependencies = [
     "Mastodon.py>=2.0",
     "beautifulsoup4",
     "lxml",
-    "Pillow",
+    "Pillow>=10.1.0",
     "sumy",
     "python-dotenv",
     "typer>=0.9",

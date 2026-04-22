@@ -149,3 +149,10 @@ cache_ttl_hours = 24
 [discovery.ranking]
 oa_weight = 1.2
 recency_half_life_years = 2.0
+
+# [enrichment.thumbnail_fallback]
+# enabled = true
+# width = 1200
+# height = 627
+# background_color = "#1c1c2e"
+# text_color = "#f0f0f0"

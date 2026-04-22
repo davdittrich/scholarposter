@@ -82,3 +82,44 @@ def download_media(url: str, timeout: int = 30, max_bytes: int = 50_000_000) -> 
             return response.content
     except (httpx.TimeoutException, httpx.HTTPError, Exception):
         return None
+
+
+def generate_card_thumbnail(title: str, subtitle: str, cfg: "ThumbnailFallbackConfig") -> bytes:
+    from PIL import ImageDraw, ImageFont
+    img = Image.new("RGB", (cfg.width, cfg.height), color=cfg.background_color)
+    draw = ImageDraw.Draw(img)
+    try:
+        title_font = ImageFont.load_default(size=48)
+        sub_font = ImageFont.load_default(size=28)
+        brand_font = ImageFont.load_default(size=20)
+    except TypeError:
+        title_font = sub_font = brand_font = ImageFont.load_default()
+
+    words = title.split()
+    lines, line = [], []
+    for word in words:
+        line.append(word)
+        if draw.textlength(" ".join(line), font=title_font) > cfg.width - 120:
+            if len(line) > 1:
+                lines.append(" ".join(line[:-1]))
+                line = [word]
+            else:
+                lines.append(" ".join(line))
+                line = []
+        if len(lines) >= 2:
+            break
+    if line:
+        lines.append(" ".join(line))
+    lines = lines[:2]
+
+    y = 80
+    for ln in lines:
+        draw.text((60, y), ln, font=title_font, fill=cfg.text_color)
+        y += 64
+    if subtitle:
+        draw.text((60, y + 20), subtitle, font=sub_font, fill=cfg.text_color)
+    draw.text((cfg.width - 220, cfg.height - 40), "⚗️ scholarposter", font=brand_font, fill=cfg.text_color)
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()

@@ -112,6 +112,15 @@ class ProgressiveEnrichmentConfig(BaseModel):
     enabled: bool = True
 
 
+class ThumbnailFallbackConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    enabled: bool = True
+    width: int = 1200
+    height: int = 627
+    background_color: str = "#1c1c2e"
+    text_color: str = "#f0f0f0"
+
+
 class EnrichmentConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -119,6 +128,7 @@ class EnrichmentConfig(BaseModel):
     summarization: SummarizationConfig = SummarizationConfig()
     url_unshorten: UrlUnshortenConfig = UrlUnshortenConfig()
     progressive: ProgressiveEnrichmentConfig = ProgressiveEnrichmentConfig()
+    thumbnail_fallback: ThumbnailFallbackConfig = ThumbnailFallbackConfig()
 
 
 class NotificationBackendConfig(BaseModel):
