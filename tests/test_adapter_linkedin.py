@@ -1,7 +1,6 @@
 """Tests for scholarposter.adapters.linkedin"""
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 import httpx
 import respx
 from scholarposter.adapters.linkedin import LinkedInAdapter
