@@ -66,7 +66,7 @@ class StateManager:
             entry.pop("last_error", None)
         # Accumulate failure history (intentionally outside model_dump — append semantics)
         if ps.last_error:
-            history = entry.get("recent_errors", [])
+            history = list(entry.get("recent_errors", []))
             history.append({
                 "toot_id": str(ps.last_toot_id) if ps.last_toot_id else "",
                 "error": ps.last_error,

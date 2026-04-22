@@ -92,6 +92,13 @@ class LinkedInAdapter(BaseAdapter):
                     headers=self._headers,
                     json=payload,
                 )
+        except httpx.RequestError as e:
+            return PostResult(
+                platform=self.platform_name,
+                status=PostStatus.FAILED,
+                error=str(e),
+                retryable=True,
+            )
         except Exception as e:
             return PostResult(
                 platform=self.platform_name,
@@ -171,7 +178,7 @@ class LinkedInAdapter(BaseAdapter):
         if image_urn:
             payload["content"] = {
                 "media": {
-                    "altText": post.media[0].alt_text or "" if post.media else "",
+                    "altText": post.media[0].alt_text or "",
                     "id": image_urn,
                 }
             }
