@@ -277,6 +277,52 @@ class TestTootToUnifiedPostReplyFields:
         assert "exclude_replies" not in call_kwargs
 
 
+class TestHashtagFallbackFromText:
+    """WU-3 (Bluesky): Bug B — extract hashtags from HTML when API tags=[]."""
+
+    collector = MastodonCollector(MagicMock())
+
+    def _make_toot(self, **overrides) -> dict:
+        base = {
+            "id": "1",
+            "created_at": "2024-01-15T10:30:00.000Z",
+            "content": "<p>Test</p>",
+            "url": "https://example.com/1",
+            "sensitive": False,
+            "spoiler_text": "",
+            "visibility": "public",
+            "tags": [],
+            "mentions": [],
+            "media_attachments": [],
+            "reblog": None,
+            "poll": None,
+            "in_reply_to_id": None,
+            "in_reply_to_account_id": None,
+            "account": {"id": "789", "username": "user", "acct": "user", "display_name": "User", "url": "https://example.com/@user"},
+        }
+        base.update(overrides)
+        return base
+
+    def test_hashtags_extracted_from_html_when_api_tags_empty(self):
+        """Discriminating: tags=[] but HTML has #hashtags → post.hashtags populated."""
+        toot = self._make_toot(
+            tags=[],
+            content="<p>Paper on #economics and #gametheory</p>",
+        )
+        post = self.collector.toot_to_unified_post(toot)
+        assert "economics" in post.hashtags
+        assert "gametheory" in post.hashtags
+
+    def test_api_tags_used_when_present_no_text_fallback(self):
+        """Regression guard: when API tags are present, text fallback is NOT used."""
+        toot = self._make_toot(
+            tags=[{"name": "biology"}],
+            content="<p>Paper on #economics</p>",
+        )
+        post = self.collector.toot_to_unified_post(toot)
+        assert post.hashtags == ["biology"]
+
+
 class TestMimeFromAttachment:
     def test_png_url_returns_image_png(self):
         att = {"type": "image", "url": "https://example.com/photo.png"}

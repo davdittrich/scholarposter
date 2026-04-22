@@ -368,6 +368,27 @@ class TestExtendedContentTypeFilters:
         assert result.passed is True
 
 
+class TestHashtagRulePrefixFixes:
+    """WU-3 (Bluesky): Bug A — # prefix handling in rule config values."""
+
+    def test_if_any_hashtag_with_hash_prefix_in_config_matches(self):
+        """Discriminating: rule with #-prefixed trigger matches bare hashtag from API."""
+        from scholarposter.config import HashtagRule
+        from scholarposter.filters import apply_hashtag_rules
+        rule = HashtagRule(add_hashtag="EconSky", if_any_hashtag=["#Economics"])
+        result = apply_hashtag_rules("Some post text", ["economics"], [rule])
+        assert result.startswith("#EconSky")
+
+    def test_add_hashtag_with_hash_prefix_does_not_double_hash(self):
+        """Discriminating: add_hashtag with # prefix does not produce ##EconSky."""
+        from scholarposter.config import HashtagRule
+        from scholarposter.filters import apply_hashtag_rules
+        rule = HashtagRule(add_hashtag="#EconSky", if_any_hashtag=["economics"])
+        result = apply_hashtag_rules("Some post text", ["economics"], [rule])
+        assert result.startswith("#EconSky")
+        assert "##" not in result
+
+
 class TestReblogFilter:
     def test_reblog_filtered_when_configured(self):
         post = make_post(is_reblog=True)

@@ -28,8 +28,8 @@ max_image_size_kb = 950
 
 # Hashtag rules: prepend add_hashtag when any of if_any_hashtag are present.
 # [[platforms.bluesky.hashtag_rules]]
-# add_hashtag = "#OpenAccess"
-# if_any_hashtag = ["#preprint", "#arxiv"]
+# add_hashtag = "OpenAccess"
+# if_any_hashtag = ["preprint", "arxiv"]
 
 [platforms.linkedin]
 enabled = true

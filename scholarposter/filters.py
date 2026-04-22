@@ -81,9 +81,9 @@ def apply_hashtag_rules(text: str, hashtags: list[str], rules: list[HashtagRule]
     post_tags_lower = {t.lower() for t in hashtags}
     to_prepend: list[str] = []
     for rule in rules:
-        trigger_lower = {t.lower() for t in rule.if_any_hashtag}
+        trigger_lower = {t.lstrip('#').lower() for t in rule.if_any_hashtag}
         if trigger_lower and (post_tags_lower & trigger_lower):
-            to_prepend.append(f"#{rule.add_hashtag}")
+            to_prepend.append(f"#{rule.add_hashtag.lstrip('#')}")
     if not to_prepend:
         return text
     return " ".join(to_prepend) + "\n" + text

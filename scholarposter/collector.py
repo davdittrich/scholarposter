@@ -12,6 +12,7 @@ from scholarposter.models import MediaAttachment, UnifiedPost
 
 _URL_RE = re.compile(r'https?://[^\s<>"\']+')
 _EMOJI_RE = re.compile(r':[A-Za-z0-9_]+:')
+_HASHTAG_TEXT_RE = re.compile(r'(?:^|\s)#(\w+)', re.MULTILINE)
 _KNOWN_VISIBILITIES = frozenset({"public", "unlisted", "private", "direct"})
 
 
@@ -117,6 +118,8 @@ class MastodonCollector:
 
         tags = source.get("tags", [])
         hashtags = extract_hashtags(tags)
+        if not hashtags and plain_text:
+            hashtags = _HASHTAG_TEXT_RE.findall(plain_text)
         urls = extract_urls(plain_text)
 
         # Parse media attachments
