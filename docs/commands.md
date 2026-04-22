@@ -2,7 +2,7 @@
 
 ## Global Flags
 
-All commands accept `--config PATH` (default: `config.toml`). The `run`, `status`, and `retry` commands additionally accept `--verbose` (DEBUG logging to stderr) and `--quiet` (suppress INFO, show WARNING and above).
+All commands accept `--config PATH` (default: `config.toml`). The `run`, `status`, `retry`, and `set-watermark` commands additionally accept `--verbose` (DEBUG logging to stderr) and `--quiet` (suppress INFO, show WARNING and above).
 
 ---
 
@@ -30,7 +30,7 @@ Behavior:
 - On failure: sends notification, records error in state
 - Retries transient errors (HTTP 429/5xx) up to 2 times with backoff
 - If a multi-chunk Bluesky thread fails mid-way, scholarposter deletes already-posted chunks before returning the failure. The post is marked failed in state and retried on the next run.
-- Appends ⚗️ to every Bluesky post, hyperlinked to the scholarposter GitHub repository.
+- Appends ⚗️ to Bluesky posts when room permits (omitted if the final chunk fills the 300-grapheme limit), hyperlinked to the scholarposter GitHub repository.
 
 ### `retry`
 
@@ -125,6 +125,8 @@ When a platform has accumulated failure history, `status` shows a `Recent failur
 immediately after the per-platform line, listing the last 10 failures with timestamp, toot ID,
 and error message (truncated to 120 characters). Failure history accumulates across runs (capped
 at 20 entries) and is cleared automatically on the next successful post.
+
+For LinkedIn, `status` also shows the access token expiry date (`token_expires_in=Nd`). When fewer than 7 days remain, a `(WARNING: expiring soon)` notice is appended. Re-authorize with `scholarposter auth linkedin`.
 
 ### `scholarposter auth linkedin`
 

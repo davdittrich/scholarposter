@@ -39,6 +39,8 @@ See [filtering.md](filtering.md) for evaluation order, content type definitions,
 
 ### `[[platforms.<name>.hashtag_rules]]`
 
+> **Bluesky only.** LinkedIn ignores this table if present.
+
 Prepend a hashtag when the original toot contains specific trigger hashtags.
 
 ```toml

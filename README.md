@@ -4,7 +4,7 @@
 ![Forks](https://img.shields.io/github/forks/davdittrich/scholarposter?style=flat-square)
 ![License](https://img.shields.io/github/license/davdittrich/scholarposter?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square)
-![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)
+![Coverage](https://img.shields.io/badge/coverage-88%25-yellow?style=flat-square)
 
 scholarposter cross-posts from Mastodon to Bluesky and LinkedIn — resolving DOIs,
 fetching Crossref abstracts, and building link cards automatically.

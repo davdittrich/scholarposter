@@ -35,9 +35,20 @@ The `card_description` property on each enriched link resolves via a three-tiere
 2. **File links** (PDFs, documents): AI summary → OG description → empty
 3. **Web pages** (HTML): OG description → AI summary → empty
 
-The `card_title` resolves similarly: Crossref title → OG/extracted title → empty.
+The `card_title` resolves similarly: Crossref title → OG/extracted title → empty. **LinkedIn only:** when the title is empty, scholarposter falls back to the link's domain name (e.g., `doi.org`) to satisfy LinkedIn's required title field.
 
 The pipeline sanitizes all card text before display. It applies NFC Unicode normalization, strips control characters and bidi overrides, and hard-truncates at 150 graphemes (description) or 70 graphemes (title).
+
+### LinkedIn thumbnail requirement
+
+LinkedIn requires a thumbnail image for every article card. scholarposter uploads
+`link.thumbnail_bytes` (fetched during enrichment) to the LinkedIn Images API and
+uses the resulting `urn:li:image:…` as the card thumbnail.
+
+If the enrichment pipeline produced no thumbnail (e.g. the page has no OG image),
+or if `media.enabled = false` in config, the post fails immediately with a clear
+error before reaching the LinkedIn API. The failure is recorded in state and visible
+under `scholarposter status` as a recent failure.
 
 ### Link selection
 

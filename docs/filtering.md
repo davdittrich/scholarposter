@@ -98,6 +98,8 @@ An empty list (the default) passes all toots.
 
 ## Hashtag rules
 
+Hashtag rules are currently supported on **Bluesky only**. Adding `[[platforms.linkedin.hashtag_rules]]` in `config.toml` has no effect.
+
 Hashtag rules are distinct from hashtag filters. A rule does not reject posts — it prepends a hashtag to the post text when a trigger condition is met.
 
 ```toml
