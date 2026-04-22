@@ -606,6 +606,13 @@ def retry(
         post = pipeline.enrich(post)
         result = _dispatch_post(platform, post, plat_cfg, dry_run, cfg=cfg, state_mgr=state_mgr, env_path=env_path)
 
+        for attempt in range(2):
+            if not result.retryable:
+                break
+            logger.info(f"[{platform}] Retrying ({attempt+1}/2) after transient error: {result.error}")
+            time.sleep(2 ** attempt)
+            result = _dispatch_post(platform, post, plat_cfg, dry_run, cfg=cfg, state_mgr=state_mgr, env_path=env_path)
+
         # FR-37: set last_posted_at on success; last_error on failure
         # Dry-run: adapter still returns POSTED but we do NOT persist state
         if not dry_run:

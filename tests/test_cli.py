@@ -614,6 +614,91 @@ class TestRetryCommand:
         assert len(update_calls) == 1
         assert update_calls[0][0][0] == "bluesky"
 
+    def test_retry_command_retries_on_transient_error(self, tmp_path):
+        """retry command auto-retries up to 2x when result.retryable=True (e.g. ECONNRESET)."""
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(_BSKY_TOML)
+
+        mock_post = MagicMock()
+        mock_post.source_id = "999"
+        mock_post.hashtags = []
+
+        transient = PostResult(platform="bluesky", status=PostStatus.FAILED, error="[Errno 104] Connection reset by peer", retryable=True)
+        success = PostResult(platform="bluesky", status=PostStatus.POSTED, post_url="https://bsky.app/p/1")
+
+        with (
+            patch("scholarposter.cli.Mastodon") as mock_mastodon_cls,
+            patch("scholarposter.cli.MastodonCollector") as mock_col_cls,
+            patch("scholarposter.cli.StateManager") as mock_state_cls,
+            patch("scholarposter.cli.EnrichmentPipeline") as mock_pipe_cls,
+            patch("scholarposter.cli._dispatch_post") as mock_dispatch,
+            patch("scholarposter.cli.find_dotenv", return_value=""),
+            patch("scholarposter.cli.time.sleep"),
+        ):
+            mock_mastodon = MagicMock()
+            mock_mastodon.status.return_value = {}
+            mock_mastodon_cls.return_value = mock_mastodon
+            mock_collector = MagicMock()
+            mock_collector.toot_to_unified_post.return_value = mock_post
+            mock_col_cls.return_value = mock_collector
+            mock_state = MagicMock()
+            mock_state.acquire_lock.return_value = True
+            mock_state_cls.return_value = mock_state
+            mock_pipe = MagicMock()
+            mock_pipe.enrich.return_value = mock_post
+            mock_pipe_cls.return_value = mock_pipe
+            mock_dispatch.side_effect = [transient, success]
+
+            result = runner.invoke(app, [
+                "retry", "--config", str(config_file),
+                "--platform", "bluesky", "--toot-id", "999",
+            ])
+
+        assert result.exit_code == 0
+        assert mock_dispatch.call_count == 2  # initial + 1 retry
+
+    def test_retry_command_exhausts_retries_on_persistent_error(self, tmp_path):
+        """retry command fails after 3 total attempts (initial + 2 retries) when always retryable."""
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(_BSKY_TOML)
+
+        mock_post = MagicMock()
+        mock_post.source_id = "999"
+        mock_post.hashtags = []
+
+        transient = PostResult(platform="bluesky", status=PostStatus.FAILED, error="[Errno 104] Connection reset by peer", retryable=True)
+
+        with (
+            patch("scholarposter.cli.Mastodon") as mock_mastodon_cls,
+            patch("scholarposter.cli.MastodonCollector") as mock_col_cls,
+            patch("scholarposter.cli.StateManager") as mock_state_cls,
+            patch("scholarposter.cli.EnrichmentPipeline") as mock_pipe_cls,
+            patch("scholarposter.cli._dispatch_post") as mock_dispatch,
+            patch("scholarposter.cli.find_dotenv", return_value=""),
+            patch("scholarposter.cli.time.sleep"),
+        ):
+            mock_mastodon = MagicMock()
+            mock_mastodon.status.return_value = {}
+            mock_mastodon_cls.return_value = mock_mastodon
+            mock_collector = MagicMock()
+            mock_collector.toot_to_unified_post.return_value = mock_post
+            mock_col_cls.return_value = mock_collector
+            mock_state = MagicMock()
+            mock_state.acquire_lock.return_value = True
+            mock_state_cls.return_value = mock_state
+            mock_pipe = MagicMock()
+            mock_pipe.enrich.return_value = mock_post
+            mock_pipe_cls.return_value = mock_pipe
+            mock_dispatch.return_value = transient
+
+            result = runner.invoke(app, [
+                "retry", "--config", str(config_file),
+                "--platform", "bluesky", "--toot-id", "999",
+            ])
+
+        assert result.exit_code == 1
+        assert mock_dispatch.call_count == 3  # initial + 2 retries
+
 
 # ---------------------------------------------------------------------------
 # config validate command
