@@ -304,3 +304,85 @@ class TestArticleThumbnailAndTitle:
             mock_client.assert_not_called()
         assert result.status == PostStatus.FAILED
         assert result.error and "media.enabled=False" in result.error
+
+
+class TestThumbnailFallback:
+    """T-45, T-46, T-48, T-54, T-55: thumbnail fallback integration tests."""
+
+    @staticmethod
+    def _adapter(thumbnail_fallback_enabled: bool = True, media_enabled: bool = True) -> LinkedInAdapter:
+        return LinkedInAdapter(
+            access_token="tok",
+            owner_urn="urn:li:person:test",
+            media_config=MediaConfig(enabled=media_enabled),
+            enrichment_cfg=EnrichmentConfig(
+                thumbnail_fallback=ThumbnailFallbackConfig(enabled=thumbnail_fallback_enabled)
+            ),
+        )
+
+    @respx.mock
+    def test_fallback_generates_thumbnail_when_missing(self):
+        """T-45: fallback enabled, no bytes → generates JPEG, post succeeds."""
+        respx.post("https://api.linkedin.com/rest/posts").mock(
+            return_value=httpx.Response(201, headers={"x-restli-id": "urn:li:share:X"})
+        )
+        link = LinkEnrichment(original_url="https://arxiv.org/abs/2401.12345", thumbnail_bytes=None)
+        adapter = self._adapter()
+        post = make_post("paper link", links=[link])
+        with patch.object(adapter, "_upload_image", return_value="urn:li:image:FALLBACK") as mock_up:
+            result = adapter.post(post)
+        assert result.status == PostStatus.POSTED
+        assert mock_up.called
+        uploaded_bytes = mock_up.call_args[0][0]
+        assert uploaded_bytes is not None and len(uploaded_bytes) > 0
+
+    def test_fallback_not_called_when_bytes_present(self):
+        """T-46: bytes already set → generate_card_thumbnail not called."""
+        link = LinkEnrichment(original_url="https://example.com/paper", thumbnail_bytes=b"IMGDATA")
+        adapter = self._adapter()
+        post = make_post("link post", links=[link])
+        with patch("scholarposter.adapters.linkedin.generate_card_thumbnail") as mock_gen:
+            with patch.object(adapter, "_upload_image", return_value="urn:li:image:ABC"):
+                with patch("scholarposter.adapters.linkedin.httpx.Client") as mock_client:
+                    mock_client.return_value.__enter__ = lambda s: mock_client.return_value
+                    mock_client.return_value.__exit__ = lambda *a: False
+                    mock_client.return_value.post.return_value.status_code = 201
+                    mock_client.return_value.post.return_value.headers = {"x-restli-id": "urn:li:share:X"}
+                    adapter.post(post)
+        mock_gen.assert_not_called()
+
+    def test_media_disabled_no_thumbnail_returns_failed(self):
+        """T-48: media.enabled=False, no thumbnail → early-return FAILED before fallback."""
+        link = LinkEnrichment(original_url="https://example.com/paper", thumbnail_bytes=None)
+        adapter = self._adapter(media_enabled=False)
+        post = make_post("link post", links=[link])
+        with patch("scholarposter.adapters.linkedin.generate_card_thumbnail") as mock_gen:
+            with patch("scholarposter.adapters.linkedin.httpx.Client") as mock_client:
+                result = adapter.post(post)
+                mock_client.assert_not_called()
+        mock_gen.assert_not_called()
+        assert result.status == PostStatus.FAILED
+        assert result.error and "media.enabled=False" in result.error
+
+    def test_fallback_exception_caught_returns_failed(self):
+        """T-54: generate_card_thumbnail raises → caught; fail-fast returns FAILED."""
+        link = LinkEnrichment(original_url="https://example.com/paper", thumbnail_bytes=None)
+        adapter = self._adapter()
+        post = make_post("link post", links=[link])
+        with patch("scholarposter.adapters.linkedin.generate_card_thumbnail", side_effect=RuntimeError("bad")):
+            with patch("scholarposter.adapters.linkedin.httpx.Client") as mock_client:
+                result = adapter.post(post)
+                mock_client.assert_not_called()
+        assert result.status == PostStatus.FAILED
+        assert result.error and "thumbnail" in result.error.lower()
+
+    @respx.mock
+    def test_text_only_post_no_links_proceeds(self):
+        """T-55: links=[] with enrichment_cfg passed → text-only post, no error."""
+        respx.post("https://api.linkedin.com/rest/posts").mock(
+            return_value=httpx.Response(201, headers={"x-restli-id": "urn:li:share:X"})
+        )
+        adapter = self._adapter()
+        post = make_post("text only post with no links")
+        result = adapter.post(post)
+        assert result.status == PostStatus.POSTED

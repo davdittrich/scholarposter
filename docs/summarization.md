@@ -46,9 +46,13 @@ LinkedIn requires a thumbnail image for every article card. scholarposter upload
 uses the resulting `urn:li:image:…` as the card thumbnail.
 
 If the enrichment pipeline produced no thumbnail (e.g. the page has no OG image),
-or if `media.enabled = false` in config, the post fails immediately with a clear
-error before reaching the LinkedIn API. The failure is recorded in state and visible
-under `scholarposter status` as a recent failure.
+scholarposter generates a fallback JPEG card (1200×627) using Pillow. The card
+renders the link title, domain, and ⚗️ branding. Disable with
+`[enrichment.thumbnail_fallback] enabled = false` to restore the original fail-fast
+behavior. If `media.enabled = false` in config, or if fallback generation fails,
+the post fails immediately with a clear error before reaching the LinkedIn API.
+The failure is recorded in state and visible under `scholarposter status` as a
+recent failure.
 
 ### Link selection
 

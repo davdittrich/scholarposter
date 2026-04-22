@@ -150,3 +150,37 @@ class TestDownloadMedia:
         with patch("scholarposter.enrichment.media.httpx.Client", return_value=mock_client):
             result = download_media("https://example.com/data", max_bytes=50_000_000)
         assert result == b"small data"
+
+
+class TestGenerateCardThumbnail:
+    """T-49, T-50, T-51: generate_card_thumbnail() returns valid JPEG cards."""
+
+    def _cfg(self):
+        from scholarposter.config import ThumbnailFallbackConfig
+        return ThumbnailFallbackConfig()
+
+    def test_returns_valid_jpeg_correct_size(self):
+        """T-49: generate_card_thumbnail returns valid JPEG at configured size."""
+        from io import BytesIO
+        from PIL import Image
+        from scholarposter.enrichment.media import generate_card_thumbnail
+        data = generate_card_thumbnail("Test Title", "example.com", self._cfg())
+        img = Image.open(BytesIO(data))
+        assert img.format == "JPEG"
+        assert img.size == (1200, 627)
+
+    def test_long_title_word_wraps_no_exception(self):
+        """T-50: title longer than card width word-wraps; no IndexError or overflow."""
+        from scholarposter.enrichment.media import generate_card_thumbnail
+        long_title = "A Very Long Title That Should Definitely Exceed The Card Width And Trigger Word Wrapping Behavior"
+        data = generate_card_thumbnail(long_title, "example.com", self._cfg())
+        assert len(data) > 0
+
+    def test_empty_title_and_subtitle_no_exception(self):
+        """T-51: empty title and subtitle complete without exception; valid JPEG."""
+        from io import BytesIO
+        from PIL import Image
+        from scholarposter.enrichment.media import generate_card_thumbnail
+        data = generate_card_thumbnail("", "", self._cfg())
+        img = Image.open(BytesIO(data))
+        assert img.format == "JPEG"
