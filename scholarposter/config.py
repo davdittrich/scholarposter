@@ -117,8 +117,8 @@ class ThumbnailFallbackConfig(BaseModel):
     enabled: bool = True
     width: int = 1200
     height: int = 627
-    background_color: str = "#1c1c2e"
-    text_color: str = "#f0f0f0"
+    background_color: str = "#0A66C2"
+    text_color: str = "#ffffff"
 
 
 class EnrichmentConfig(BaseModel):

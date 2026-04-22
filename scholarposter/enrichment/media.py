@@ -89,9 +89,9 @@ def generate_card_thumbnail(title: str, subtitle: str, cfg: "ThumbnailFallbackCo
     img = Image.new("RGB", (cfg.width, cfg.height), color=cfg.background_color)
     draw = ImageDraw.Draw(img)
     try:
-        title_font = ImageFont.load_default(size=48)
-        sub_font = ImageFont.load_default(size=28)
-        brand_font = ImageFont.load_default(size=20)
+        title_font = ImageFont.load_default(size=72)
+        sub_font = ImageFont.load_default(size=40)
+        brand_font = ImageFont.load_default(size=28)
     except TypeError:
         title_font = sub_font = brand_font = ImageFont.load_default()
 
@@ -115,7 +115,7 @@ def generate_card_thumbnail(title: str, subtitle: str, cfg: "ThumbnailFallbackCo
     y = 80
     for ln in lines:
         draw.text((60, y), ln, font=title_font, fill=cfg.text_color)
-        y += 64
+        y += 90
     if subtitle:
         draw.text((60, y + 20), subtitle, font=sub_font, fill=cfg.text_color)
     draw.text((cfg.width - 220, cfg.height - 40), "⚗️ scholarposter", font=brand_font, fill=cfg.text_color)
