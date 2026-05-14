@@ -383,7 +383,7 @@ def _dispatch_post(
         except Exception as e:
             return PostResult(platform=platform, status=PostStatus.FAILED,
                               error=f"Bluesky login failed: {_redact(str(e))}")
-        adapter = BlueskyAdapter(client=client, hashtag_rules=plat_cfg.hashtag_rules, media_config=plat_cfg.media)
+        adapter = BlueskyAdapter(client=client, hashtag_rules=plat_cfg.hashtag_rules, media_config=plat_cfg.media, include_source_link=plat_cfg.include_source_link)
     elif platform == "linkedin":
         # FR-63: check auth state (expired token)
         if state_mgr:

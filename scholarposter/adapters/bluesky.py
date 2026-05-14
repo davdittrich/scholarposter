@@ -29,6 +29,7 @@ _TAG_RE = re.compile(rb"#(\S+)")
 MAX_GRAPHEMES = 300
 _BRAND_SYMBOL = "⚗️"   # U+2697 + U+FE0F — 6 bytes UTF-8, 1 grapheme
 _BRAND_URL = "https://github.com/davdittrich/scholarposter"
+_SOURCE_SYMBOL = "🦣"
 
 
 def _select_best_link(links, used_urls=None, chunk_text=None, promoted=None):
@@ -167,20 +168,30 @@ def chunk_text(text: str, max_graphemes: int = MAX_GRAPHEMES) -> list[str]:
     return chunks
 
 
-def _append_brand(chunks: list[str]) -> tuple[list[str], bool]:
-    """Append the brand symbol to the last chunk when room permits.
+def _append_brand(chunks: list[str], include_source: bool = True) -> tuple[list[str], bool, bool]:
+    """Append brand and optionally source symbols to the last chunk if room permits.
 
-    Returns (modified_chunks, was_appended). The caller uses was_appended
-    to guard facet construction — avoids false-positives when ⚗️ appears
-    naturally in post content on a full-length chunk.
+    Returns (modified_chunks, brand_appended, source_appended).
     """
     if not chunks:
-        return chunks, False
-    suffix = f" {_BRAND_SYMBOL}"
+        return chunks, False, False
+
     last = chunks[-1]
-    if _grapheme_len(last) + _grapheme_len(suffix) <= MAX_GRAPHEMES:
-        return chunks[:-1] + [last + suffix], True
-    return chunks, False
+    brand_appended = False
+    source_appended = False
+
+    # Try both symbols first
+    if include_source:
+        full_suffix = f" {_SOURCE_SYMBOL} {_BRAND_SYMBOL}"
+        if _grapheme_len(last) + _grapheme_len(full_suffix) <= MAX_GRAPHEMES:
+            return chunks[:-1] + [last + full_suffix], True, True
+
+    # Fallback: try just brand
+    brand_suffix = f" {_BRAND_SYMBOL}"
+    if _grapheme_len(last) + _grapheme_len(brand_suffix) <= MAX_GRAPHEMES:
+        return chunks[:-1] + [last + brand_suffix], True, False
+
+    return chunks, False, False
 
 
 def _build_facets(text: str, client: Any) -> list[models.AppBskyRichtextFacet.Main]:
@@ -241,10 +252,11 @@ def _delete_bluesky_post(client: Any, uri: str) -> bool:
 
 class BlueskyAdapter(BaseAdapter):
     def __init__(self, client: Any, hashtag_rules: Optional[list[HashtagRule]] = None,
-                 media_config: Optional[MediaConfig] = None):
+                 media_config: Optional[MediaConfig] = None, include_source_link: bool = True):
         self._client = client
         self._hashtag_rules: list[HashtagRule] = hashtag_rules or []
         self._media_cfg: MediaConfig = media_config or MediaConfig()
+        self._include_source_link = include_source_link
 
     @property
     def platform_name(self) -> str:
@@ -254,7 +266,7 @@ class BlueskyAdapter(BaseAdapter):
         """Post a UnifiedPost to Bluesky, threading if needed."""
         text = apply_hashtag_rules(unified_post.text, unified_post.hashtags, self._hashtag_rules)
         chunks = chunk_text(text)
-        chunks, brand_appended = _append_brand(chunks)
+        chunks, brand_appended, source_appended = _append_brand(chunks, self._include_source_link)
 
         if dry_run:
             return PostResult(platform=self.platform_name, status=PostStatus.POSTED, chunk_count=len(chunks))
@@ -273,17 +285,28 @@ class BlueskyAdapter(BaseAdapter):
         for i, chunk in enumerate(chunks):
             facets = _build_facets(chunk, self._client)
 
-            if i == len(chunks) - 1 and brand_appended:
-                symbol_bytes = _BRAND_SYMBOL.encode("utf-8")
+            if i == len(chunks) - 1:
                 chunk_bytes = chunk.encode("utf-8")
-                byte_start = chunk_bytes.rfind(symbol_bytes)
-                byte_end = byte_start + len(symbol_bytes)
-                facets.append(models.AppBskyRichtextFacet.Main(
-                    index=models.AppBskyRichtextFacet.ByteSlice(
-                        byte_start=byte_start, byte_end=byte_end,
-                    ),
-                    features=[models.AppBskyRichtextFacet.Link(uri=_BRAND_URL)],
-                ))
+                if source_appended:
+                    symbol_bytes = _SOURCE_SYMBOL.encode("utf-8")
+                    byte_start = chunk_bytes.rfind(symbol_bytes)
+                    byte_end = byte_start + len(symbol_bytes)
+                    facets.append(models.AppBskyRichtextFacet.Main(
+                        index=models.AppBskyRichtextFacet.ByteSlice(
+                            byte_start=byte_start, byte_end=byte_end,
+                        ),
+                        features=[models.AppBskyRichtextFacet.Link(uri=unified_post.source_url)],
+                    ))
+                if brand_appended:
+                    symbol_bytes = _BRAND_SYMBOL.encode("utf-8")
+                    byte_start = chunk_bytes.rfind(symbol_bytes)
+                    byte_end = byte_start + len(symbol_bytes)
+                    facets.append(models.AppBskyRichtextFacet.Main(
+                        index=models.AppBskyRichtextFacet.ByteSlice(
+                            byte_start=byte_start, byte_end=byte_end,
+                        ),
+                        features=[models.AppBskyRichtextFacet.Link(uri=_BRAND_URL)],
+                    ))
 
             if i == 0 and unified_post.media:
                 embed = self._build_image_embed(unified_post)

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch, call
 from scholarposter.adapters.base import BaseAdapter
 from scholarposter.adapters.bluesky import (
     BlueskyAdapter, parse_mentions, parse_urls, parse_tags, chunk_text,
-    _BRAND_SYMBOL, _BRAND_URL, _append_brand,
+    _BRAND_SYMBOL, _BRAND_URL, _append_brand, _SOURCE_SYMBOL,
 )
 from scholarposter.models import UnifiedPost, MediaAttachment, LinkEnrichment, PostStatus
 from scholarposter.config import MediaConfig
@@ -633,7 +633,7 @@ class TestBlueskyAdapterHashtagRules:
 
         call_args = mock_client.com.atproto.repo.create_record.call_args
         record = call_args[1]["record"] if call_args[1] else call_args[0][0].record
-        assert record.text == f"Plain post {_BRAND_SYMBOL}"
+        assert record.text == f"Plain post {_SOURCE_SYMBOL} {_BRAND_SYMBOL}"
 
 
 class TestCardDescriptionInEmbed:
@@ -899,19 +899,19 @@ class TestBrandLink:
     # --- _append_brand unit tests (no mock needed) ---
 
     def test_symbol_appended_to_single_chunk(self):
-        chunks, appended = _append_brand(["Hello world"])
+        chunks, appended, source_appended = _append_brand(["Hello world"])
         assert appended is True
-        assert chunks == [f"Hello world {_BRAND_SYMBOL}"]
+        assert chunks == [f"Hello world {_SOURCE_SYMBOL} {_BRAND_SYMBOL}"]
 
     def test_symbol_appended_to_last_chunk_only(self):
-        chunks, appended = _append_brand(["chunk one 1/2", "chunk two 2/2"])
+        chunks, appended, source_appended = _append_brand(["chunk one 1/2", "chunk two 2/2"])
         assert appended is True
         assert _BRAND_SYMBOL in chunks[-1]
         assert _BRAND_SYMBOL not in chunks[0]
 
     def test_symbol_omitted_when_no_room(self):
         full = "a" * 300
-        result_chunks, appended = _append_brand([full])
+        result_chunks, appended, source_appended = _append_brand([full])
         assert appended is False
         assert result_chunks == [full]
 
@@ -922,7 +922,7 @@ class TestBrandLink:
         """
         # 299 graphemes of 'a' + ⚗️ = 300 graphemes exactly; no room to append
         content = "a" * 299 + _BRAND_SYMBOL
-        result_chunks, appended = _append_brand([content])
+        result_chunks, appended, source_appended = _append_brand([content])
         assert appended is False
         assert result_chunks == [content]
 

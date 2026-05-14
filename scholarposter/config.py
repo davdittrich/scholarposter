@@ -37,6 +37,7 @@ class PlatformConfig(BaseModel):
     enabled: bool = True
     filters: FilterConfig = FilterConfig()
     media: MediaConfig = MediaConfig()
+    include_source_link: bool = True
     hashtag_rules: list[HashtagRule] = []
 
 
