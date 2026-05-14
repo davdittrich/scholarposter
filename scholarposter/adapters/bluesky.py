@@ -31,25 +31,41 @@ _BRAND_SYMBOL = "⚗️"   # U+2697 + U+FE0F — 6 bytes UTF-8, 1 grapheme
 _BRAND_URL = "https://github.com/davdittrich/scholarposter"
 
 
-def _select_best_link(links, chunk_text=None, promoted=None):
+def _select_best_link(links, used_urls=None, chunk_text=None, promoted=None):
     """Select the most-enriched link for a chunk. FR-26a."""
     if not links:
         return promoted
+
+    if used_urls is None:
+        used_urls = set()
+
     candidates = []
-    if chunk_text is not None:
-        for link in links:
-            url = link.resolved_url or link.original_url
+    for link in links:
+        url = link.resolved_url or link.original_url
+        if url in used_urls:
+            continue
+
+        # If chunk_text provided, prioritize links within it
+        if chunk_text is not None:
             if url in chunk_text or link.original_url in chunk_text:
                 pos = chunk_text.find(link.original_url)
                 if pos == -1:
                     pos = chunk_text.find(url)
                 candidates.append((link, pos))
+
     if candidates:
         candidates.sort(key=lambda x: (-x[0].enrichment_rank, x[1]))
         return candidates[0][0]
-    if promoted:
+
+    if promoted and (promoted.resolved_url or promoted.original_url) not in used_urls:
         return promoted
-    return max(links, key=lambda link: link.enrichment_rank)
+
+    # Fallback: best link not yet used
+    unused = [l for l in links if (l.resolved_url or l.original_url) not in used_urls]
+    if unused:
+        return max(unused, key=lambda l: l.enrichment_rank)
+
+    return None
 
 
 def parse_mentions(text: str) -> list[dict[str, Any]]:
@@ -250,8 +266,8 @@ class BlueskyAdapter(BaseAdapter):
 
         root_ref: Optional[Any] = None
         parent_ref: Optional[Any] = None
+        used_urls = set()
         promoted_link = None
-        link_card_placed = False
         posted_uris: list[str] = []
 
         for i, chunk in enumerate(chunks):
@@ -272,13 +288,12 @@ class BlueskyAdapter(BaseAdapter):
             if i == 0 and unified_post.media:
                 embed = self._build_image_embed(unified_post)
                 promoted_link = post_best_link  # Promote to next chunk
-            elif not link_card_placed:
-                selected = _select_best_link(unified_post.links, chunk, promoted_link)
-                embed = self._build_link_embed(selected)
-                link_card_placed = True  # Card slot consumed; don't retry on later chunks
-                promoted_link = None
             else:
-                embed = None
+                selected = _select_best_link(unified_post.links, used_urls, chunk, promoted_link)
+                embed = self._build_link_embed(selected)
+                if selected:
+                    used_urls.add(selected.resolved_url or selected.original_url)
+                promoted_link = None
 
             reply = None
             if i > 0 and root_ref and parent_ref:
