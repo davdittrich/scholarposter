@@ -50,7 +50,8 @@ flowchart TD
 
     F[Enriched post] --> F1[Resolve card title + description]
     F1 --> G{Platform}
-    G -->|Bluesky| H[Thread + facets + link card per chunk]
+    G -->|Bluesky| H[Thread + facets + one link card per chunk]
+    H --> I[Optional 🦣 link back to source]
     G -->|LinkedIn| I[Article card with best link]
     H & I --> J[Update state + bibliography]
 ```

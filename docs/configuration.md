@@ -19,6 +19,7 @@ One section per platform (`bluesky`, `linkedin`).
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Set to `false` to disable |
+| `include_source_link` | `true` | **Bluesky only.** Add 🦣 link back to the original Mastodon post |
 
 ### `[platforms.<name>.filters]`
 
