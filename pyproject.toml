@@ -28,7 +28,7 @@ dependencies = [
     "pymupdf4llm",
     "grapheme>=0.6",
     "tomli_w>=1.0",
-    "gemini-acp @ git+https://github.com/davdittrich/gemini-acp.git@2cc58fe5134ee32aa3421878ce09d8c337db8578",
+    "gemini-acp @ git+https://github.com/davdittrich/gemini-acp.git@32ae5c157a35a43ec16f6b67356b9944438e6faa",
 ]
 
 [project.optional-dependencies]
