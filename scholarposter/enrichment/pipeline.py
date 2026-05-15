@@ -108,7 +108,7 @@ class EnrichmentPipeline:
         text_input = link.body_text or link.crossref_abstract
         if self._cfg.summarization.enabled and text_input:
             try:
-                summary_text, backend_name = summarize(
+                summary_text, backend_name, usage = summarize(
                     text=text_input,
                     backend=self._cfg.summarization.backend,
                     max_chars=self._cfg.summarization.max_chars,
@@ -117,10 +117,19 @@ class EnrichmentPipeline:
                 )
                 if summary_text:
                     path.append("stage_5_summarize")
-                    link = link.model_copy(update={
+                    updates = {
                         "summary": summary_text,
                         "llm_backend_used": backend_name,
-                    })
+                    }
+                    if usage:
+                        updates.update({
+                            "llm_tokens": usage.tokens_used,
+                            "llm_cost_usd": usage.cost_usd,
+                            "llm_usage_is_estimated": usage.is_estimated,
+                            "llm_cost_currency": usage.cost_currency,
+                            "llm_cost_is_estimated": usage.cost_is_estimated,
+                        })
+                    link = link.model_copy(update=updates)
             except Exception as e:
                 logger.warning(f"Summarization failed: {e}")
 

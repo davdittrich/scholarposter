@@ -32,6 +32,11 @@ def build_audit_record(
     enrichment_path: list[str] = first_link.enrichment_path if first_link else []
     pdf_stage_skipped: bool = "stage_2.5_skip" in enrichment_path
     llm_backend_used: Optional[str] = first_link.llm_backend_used if first_link else None
+    llm_tokens: Optional[int] = first_link.llm_tokens if first_link else None
+    llm_cost_usd: Optional[float] = first_link.llm_cost_usd if first_link else None
+    llm_cost_currency: Optional[str] = first_link.llm_cost_currency if first_link else None
+    llm_usage_is_estimated: bool = first_link.llm_usage_is_estimated if first_link else False
+    llm_cost_is_estimated: bool = first_link.llm_cost_is_estimated if first_link else False
     doi: Optional[str] = first_link.doi if first_link else None
     link_type: Optional[str] = first_link.link_type.value if first_link else None
 
@@ -49,6 +54,11 @@ def build_audit_record(
         "enrichment_path": enrichment_path,
         "pdf_stage_skipped": pdf_stage_skipped,
         "llm_backend_used": llm_backend_used,
+        "llm_tokens": llm_tokens,
+        "llm_cost_usd": llm_cost_usd,
+        "llm_cost_currency": llm_cost_currency,
+        "llm_usage_is_estimated": llm_usage_is_estimated,
+        "llm_cost_is_estimated": llm_cost_is_estimated,
         "abstract_chars": abstract_chars,
         "summary_chars": summary_chars,
         "doi": doi,

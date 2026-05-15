@@ -48,6 +48,11 @@ def _make_link(
     summary: str | None = None,
     enrichment_path: list[str] | None = None,
     llm_backend_used: str | None = None,
+    llm_tokens: int | None = None,
+    llm_cost_usd: float | None = None,
+    llm_cost_currency: str | None = None,
+    llm_usage_is_estimated: bool = False,
+    llm_cost_is_estimated: bool = False,
     link_type: LinkType = LinkType.WEBPAGE,
 ) -> LinkEnrichment:
     return LinkEnrichment(
@@ -57,6 +62,11 @@ def _make_link(
         summary=summary,
         enrichment_path=enrichment_path or [],
         llm_backend_used=llm_backend_used,
+        llm_tokens=llm_tokens,
+        llm_cost_usd=llm_cost_usd,
+        llm_cost_currency=llm_cost_currency,
+        llm_usage_is_estimated=llm_usage_is_estimated,
+        llm_cost_is_estimated=llm_cost_is_estimated,
         link_type=link_type,
     )
 
@@ -91,7 +101,7 @@ class TestBuildAuditRecord:
         )
         required = {
             "timestamp", "toot_id", "platform", "status", "enrichment_path",
-            "pdf_stage_skipped", "llm_backend_used", "abstract_chars", "summary_chars",
+            "pdf_stage_skipped", "llm_backend_used", "llm_tokens", "llm_cost_usd", "llm_cost_currency", "llm_usage_is_estimated", "llm_cost_is_estimated", "abstract_chars", "summary_chars",
             "doi", "link_type", "post_url", "bluesky_likes", "bluesky_reposts",
             "engagement_synced_at", "hashtags", "chunk_count",
         }
@@ -185,6 +195,23 @@ class TestBuildAuditRecord:
         result = PostResult(platform="bluesky", status=PostStatus.POSTED)
         record = build_audit_record("1", "bluesky", post, result, dry_run=False)
         assert record["llm_backend_used"] == "extractive"
+
+    def test_llm_usage_extracted_from_link(self):
+        link = _make_link(
+            llm_tokens=100,
+            llm_cost_usd=0.0015,
+            llm_cost_currency="USD",
+            llm_usage_is_estimated=True,
+            llm_cost_is_estimated=True,
+        )
+        post = _make_post(links=[link])
+        result = PostResult(platform="bluesky", status=PostStatus.POSTED)
+        record = build_audit_record("1", "bluesky", post, result, dry_run=False)
+        assert record["llm_tokens"] == 100
+        assert record["llm_cost_usd"] == 0.0015
+        assert record["llm_cost_currency"] == "USD"
+        assert record["llm_usage_is_estimated"] is True
+        assert record["llm_cost_is_estimated"] is True
 
     def test_link_type_from_first_link(self):
         link = _make_link(link_type=LinkType.FILE)

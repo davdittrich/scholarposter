@@ -16,7 +16,7 @@ from sumy.summarizers.kl import KLSummarizer
 from sumy.summarizers.lsa import LsaSummarizer
 
 from scholarposter.config import SummarizationConfig
-from scholarposter.gemini_client import summarize_via_gemini
+from scholarposter.gemini_client import summarize_via_gemini, GeminiUsage
 
 _LANGUAGE = "english"
 # Minimum sentence count before extractive summarization is attempted
@@ -273,13 +273,13 @@ def summarize(
     max_chars: int,
     prompt: str,
     config: SummarizationConfig,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[str], Optional[GeminiUsage]]:
     """Summarize text using the specified backend, with fallback chain.
 
     Fallback order: gemini -> lemonade -> ollama -> extractive.
     Result is truncated to max_chars.
-    Returns (text, backend_name) where text is the summary (or None if all backends fail)
-    and backend_name is the backend that produced the result (or None if none did).
+    Returns (text, backend_name, usage) where text is the summary (or None if all backends fail),
+    backend_name is the backend used, and usage is a GeminiUsage object (if gemini was used).
     """
     # FR-20d: truncate input to safe byte limit
     text_bytes = text.encode("utf-8")
@@ -288,6 +288,7 @@ def summarize(
 
     result: Optional[str] = None
     used_backend: Optional[str] = None
+    usage: Optional[GeminiUsage] = None
 
     # Try backends in order starting from the preferred one
     backend_order = _build_backend_order(backend)
@@ -296,7 +297,7 @@ def summarize(
         if i > 0:
             logger.warning(f"Summarizer: falling back to {b}")
         if b == "gemini":
-            result = summarize_via_gemini(
+            result, usage = summarize_via_gemini(
                 text,
                 prompt=prompt,
                 model=config.gemini.model,
@@ -334,9 +335,9 @@ def summarize(
             break
 
     if not result:
-        return (None, None)
+        return (None, None, None)
 
-    return (result[:max_chars], used_backend)
+    return (result[:max_chars], used_backend, usage)
 
 
 def _build_backend_order(preferred: str) -> list[str]:

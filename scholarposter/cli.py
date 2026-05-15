@@ -1245,7 +1245,7 @@ def audit_cmd(
     if csv_output:
         columns = [
             "timestamp", "toot_id", "platform", "status", "doi",
-            "llm_backend_used", "summary_chars", "bluesky_likes",
+            "llm_backend_used", "llm_tokens", "llm_cost_usd", "llm_cost_currency", "llm_usage_is_estimated", "llm_cost_is_estimated", "summary_chars", "bluesky_likes",
             "bluesky_reposts", "engagement_synced_at",
         ]
         buf = io.StringIO()
@@ -1258,7 +1258,7 @@ def audit_cmd(
 
     # Default: tabular output
     # Columns: timestamp | toot_id | platform | status | doi | llm_backend | summary_chars | engagement
-    header = f"{'timestamp':<22} {'toot_id':<20} {'platform':<10} {'status':<8} {'doi':<20} {'llm_backend':<12} {'sum_chars':<10} engagement"
+    header = f"{'timestamp':<22} {'toot_id':<20} {'platform':<10} {'status':<8} {'doi':<20} {'backend':<12} {'sc':<4} {'tok':<6} {'cost':<8} engagement"
     typer.echo(header)
     typer.echo("-" * len(header))
     for rec in records:
@@ -1268,7 +1268,11 @@ def audit_cmd(
         st = str(rec.get("status", ""))[:8]
         doi = str(rec.get("doi") or "")[:20]
         backend = str(rec.get("llm_backend_used") or "")[:12]
-        sc = str(rec.get("summary_chars") or "")[:10]
+        sc = str(rec.get("summary_chars") or "")[:4]
+        tok = str(rec.get("llm_tokens") or "")[:6]
+        cost_val = rec.get("llm_cost_usd")
+        cost = f"{cost_val:.4f}" if cost_val is not None else ""
+        
         likes = rec.get("bluesky_likes")
         reposts = rec.get("bluesky_reposts")
         if likes is None and reposts is None:
@@ -1276,7 +1280,7 @@ def audit_cmd(
         else:
             engagement = f"likes={likes} reposts={reposts}"
         typer.echo(
-            f"{ts:<22} {toot_id:<20} {plat:<10} {st:<8} {doi:<20} {backend:<12} {sc:<10} {engagement}"
+            f"{ts:<22} {toot_id:<20} {plat:<10} {st:<8} {doi:<20} {backend:<12} {sc:<4} {tok:<6} {cost:<8} {engagement}"
         )
 
 

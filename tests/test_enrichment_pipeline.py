@@ -555,7 +555,7 @@ class TestStage5GuardAmendment:
             patch("scholarposter.enrichment.pipeline.lookup_doi", return_value={
                 "title": "Title", "abstract": "A long abstract that summarizer can use."}),
             patch("scholarposter.enrichment.pipeline.summarize",
-                  return_value=("Summary from abstract.", "extractive")) as mock_summ,
+                  return_value=("Summary from abstract.", "extractive", None)) as mock_summ,
         ):
             post = make_post(urls=["https://example.com/p"])
             result = pipeline.enrich(post)
@@ -618,6 +618,39 @@ class TestEnrichmentMetadataFields:
             result = pipeline.enrich(post)
             assert "stage_4_crossref" in result.links[0].enrichment_path
 
+    def test_llm_usage_populated_after_summarization(self, state):
+        """link.llm_tokens/cost must be set after Stage 5 if usage info available."""
+        from scholarposter.gemini_client import GeminiUsage
+        cfg = EnrichmentConfig(
+            crossref=CrossrefConfig(enabled=False),
+            summarization=SummarizationConfig(enabled=True, backend="gemini"),
+            url_unshorten=UrlUnshortenConfig(enabled=False),
+        )
+        pipeline = EnrichmentPipeline(config=cfg, cache=state)
+        usage = GeminiUsage(tokens_used=123, cost_usd=0.00045, cost_currency="USD",
+                           is_estimated=False, cost_is_estimated=True)
+
+        with (
+            patch("scholarposter.enrichment.pipeline.unshorten_url", return_value="https://example.com/p"),
+            patch("scholarposter.enrichment.pipeline.detect_content_type", return_value="text/html"),
+            patch("scholarposter.enrichment.pipeline.httpx.Client",
+                  return_value=_mock_html_client("<html></html>")),
+            patch("scholarposter.enrichment.pipeline.extract_og_tags", return_value={}),
+            patch("scholarposter.enrichment.pipeline.extract_body_text", return_value="body"),
+            patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
+            patch("scholarposter.enrichment.pipeline.summarize",
+                  return_value=("A summary.", "gemini", usage)),
+        ):
+            post = make_post(urls=["https://example.com/p"])
+            result = pipeline.enrich(post)
+            link = result.links[0]
+            assert link.llm_backend_used == "gemini"
+            assert link.llm_tokens == 123
+            assert link.llm_cost_usd == 0.00045
+            assert link.llm_cost_currency == "USD"
+            assert link.llm_usage_is_estimated is False
+            assert link.llm_cost_is_estimated is True
+
     def test_llm_backend_used_populated_after_summarization(self, state):
         """link.llm_backend_used must be set to the backend name after Stage 5."""
         cfg = EnrichmentConfig(
@@ -637,7 +670,7 @@ class TestEnrichmentMetadataFields:
             patch("scholarposter.enrichment.pipeline.extract_body_text", return_value="Full body text here."),
             patch("scholarposter.enrichment.pipeline.detect_dois", return_value=[]),
             patch("scholarposter.enrichment.pipeline.summarize",
-                  return_value=("A summary.", "extractive")),
+                  return_value=("A summary.", "extractive", None)),
         ):
             post = make_post(urls=["https://example.com/p"])
             result = pipeline.enrich(post)

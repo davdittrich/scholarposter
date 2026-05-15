@@ -97,6 +97,11 @@ class LinkEnrichment(BaseModel):
     # US-013 / US-015a audit metadata (populated by EnrichmentPipeline)
     enrichment_path: list[str] = []
     llm_backend_used: Optional[str] = None
+    llm_tokens: Optional[int] = None
+    llm_cost_usd: Optional[float] = None
+    llm_cost_currency: Optional[str] = None
+    llm_cost_is_estimated: bool = False
+    llm_usage_is_estimated: bool = False
 
     @property
     def enrichment_rank(self) -> int:
