@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 
 from loguru import logger
@@ -43,17 +44,20 @@ def summarize_via_gemini(
         return (None, None)
 
     full_prompt = f"{prompt}\n\n{text}"
-    cmd = ["agy", "--print", full_prompt]
-    if model:
-        cmd.extend(["--model", model])
 
+    # --add-dir with a fresh tmpdir isolates this invocation from any
+    # concurrent interactive agy sessions, preventing conversation bleed.
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cmd = ["agy", "--add-dir", tmpdir, "--print", full_prompt]
+            if model:
+                cmd.extend(["--model", model])
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
     except subprocess.TimeoutExpired:
         logger.warning(f"agy timed out after {timeout}s")
         return (None, None)
