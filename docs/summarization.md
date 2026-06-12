@@ -213,36 +213,27 @@ curl http://127.0.0.1:8000/v1/models  # currently loaded
 
 ## Gemini (cloud)
 
-scholarposter communicates with the Gemini CLI via the Agent Client Protocol (ACP) —
-a structured JSON-RPC 2.0 interface over stdio, provided by the
-[gemini-acp](https://github.com/davdittrich/gemini-acp) shared package.
+scholarposter calls the [agy (Antigravity CLI)](https://github.com/davdittrich/agy)
+via `agy --print` for non-interactive summarization. No ACP/JSON-RPC layer required.
 
 ### Install
 
-Install the Gemini CLI and authenticate:
-
 ```bash
-# Install the Gemini CLI binary (requires 0.36.0+):
-# https://ai.google.dev/gemini-api/docs/downloads
-# Verify: gemini --version
-
-# The ACP client library is installed automatically with scholarposter
-```
-
-Verify the CLI is on your PATH:
-
-```bash
-which gemini
-gemini --version
+# Install agy — see https://github.com/davdittrich/agy for install instructions
+# Verify:
+agy --version
 ```
 
 ### Authenticate
 
-```bash
-gemini auth login
-```
+agy uses the same Google credentials as the Gemini CLI. Run any interactive `agy`
+session once to complete OAuth if needed.
 
-Follow the browser prompt to authorize with your Google account.
+Verify the CLI is on your PATH:
+
+```bash
+which agy
+```
 
 ### Verify
 

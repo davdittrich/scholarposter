@@ -318,7 +318,7 @@ scholarposter/
 ├── state.py                # JSON state/cache, file locking, bibliography
 ├── collector.py            # Mastodon toot fetching and HTML→text parsing
 ├── filters.py              # Hashtag/content-type filtering, hashtag rules
-├── gemini_client.py        # Thin re-export from gemini-acp package
+├── gemini_client.py        # Agy CLI subprocess backend for summarization
 ├── bibliography.py         # BibTeX and Markdown export formatting
 ├── discovery/              # OpenAlex citation graph discovery
 │   ├── __init__.py         #   CandidatePaper dataclass
