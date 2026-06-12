@@ -9,7 +9,7 @@ import pytest
 import respx
 
 from scholarposter.config import SummarizationConfig
-from scholarposter.gemini_client import summarize_via_gemini
+from scholarposter.gemini_client import summarize_via_gemini, GeminiUsage
 from scholarposter.enrichment.summarizer import (
     summarize_lemonade,
     summarize_ollama,
@@ -40,12 +40,14 @@ class TestSummarizeGeminiIntegration:
     def test_gemini_backend_calls_summarize_via_gemini(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         config.gemini.model = "gemini-3-flash-preview"
+        usage = GeminiUsage(tokens_used=100, cost_usd=0.00015, cost_currency="USD", is_estimated=False, cost_is_estimated=False)
         with patch("scholarposter.enrichment.summarizer.summarize_via_gemini",
-                   return_value="gemini summary") as mock:
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
-                                      prompt="Sum:", config=config)
+                   return_value=("gemini summary", usage)) as mock:
+            text, backend, returned_usage = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
+                                                      prompt="Sum:", config=config)
         assert text == "gemini summary"
         assert backend == "gemini"
+        assert returned_usage == usage
         mock.assert_called_once()
         call_kwargs = mock.call_args
         assert call_kwargs[1]["model"] == "gemini-3-flash-preview"
@@ -53,13 +55,14 @@ class TestSummarizeGeminiIntegration:
     def test_gemini_backend_returns_none_falls_through_to_lemonade(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
-            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=(None, None)),
             patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
         ):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
-                                      prompt="Sum:", config=config)
+            text, backend, usage = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500,
+                                             prompt="Sum:", config=config)
         assert text == "lemonade result"
         assert backend == "lemonade"
+        assert usage is None
 
     def test_gemini_model_empty_by_default(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
@@ -152,74 +155,82 @@ class TestSummarizeExtractive:
 
 class TestSummarize:
     def test_returns_tuple(self) -> None:
-        """summarize() returns a 2-tuple (text, backend_name)."""
+        """summarize() returns a 3-tuple (text, backend_name, usage)."""
         config = SummarizationConfig(backend="extractive", max_chars=500)
         with patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value="some text"):
             result = summarize(MULTI_SENTENCE_TEXT, backend="extractive", max_chars=500, prompt="Sum:", config=config)
         assert isinstance(result, tuple)
-        assert len(result) == 2
+        assert len(result) == 3
 
     def test_returns_none_when_all_backends_fail(self) -> None:
-        """When all backends return None, summarize() returns (None, None)."""
+        """When all backends return None, summarize() returns (None, None, None)."""
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
-            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=(None, None)),
             patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value=""),
         ):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
+            text, backend, usage = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         assert text is None
         assert backend is None
+        assert usage is None
 
     def test_uses_preferred_backend_first(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
-        with patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value="gemini result"):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
+        usage = GeminiUsage(tokens_used=50, cost_usd=0.0001, cost_currency="USD", is_estimated=True, cost_is_estimated=True)
+        with patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=("gemini result", usage)):
+            text, backend, returned_usage = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         assert text == "gemini result"
         assert backend == "gemini"
+        assert returned_usage == usage
 
     def test_falls_back_to_lemonade_when_gemini_returns_none(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
-            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=(None, None)),
             patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
         ):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
+            text, backend, usage = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         assert text == "lemonade result"
         assert backend == "lemonade"
+        assert usage is None
 
     def test_falls_back_to_extractive_when_all_llm_return_none(self) -> None:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         with (
-            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+            patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=(None, None)),
             patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value="extractive result"),
         ):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
+            text, backend, usage = summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         assert text == "extractive result"
         assert backend == "extractive"
+        assert usage is None
 
     def test_truncates_to_max_chars(self) -> None:
         config = SummarizationConfig(backend="extractive", max_chars=10)
         with patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value="A" * 100):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="extractive", max_chars=10, prompt="Sum:", config=config)
+            text, backend, usage = summarize(MULTI_SENTENCE_TEXT, backend="extractive", max_chars=10, prompt="Sum:", config=config)
         assert len(text) <= 10
+        assert usage is None
 
     def test_extractive_backend_direct(self) -> None:
         config = SummarizationConfig(backend="extractive", max_chars=500)
         with patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value="extractive summary"):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="extractive", max_chars=500, prompt="Sum:", config=config)
+            text, backend, usage = summarize(MULTI_SENTENCE_TEXT, backend="extractive", max_chars=500, prompt="Sum:", config=config)
         assert text == "extractive summary"
         assert backend == "extractive"
+        assert usage is None
 
     def test_ollama_backend_direct(self) -> None:
         config = SummarizationConfig(backend="ollama", max_chars=500)
         with patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value="ollama summary"):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="ollama", max_chars=500, prompt="Sum:", config=config)
+            text, backend, usage = summarize(MULTI_SENTENCE_TEXT, backend="ollama", max_chars=500, prompt="Sum:", config=config)
         assert text == "ollama summary"
         assert backend == "ollama"
+        assert usage is None
 
 
 class TestBuildBackendOrder:
@@ -277,7 +288,7 @@ class TestSummarizeFallbackLogging:
         config = SummarizationConfig(backend="gemini", max_chars=500)
         try:
             with (
-                patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=None),
+                patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=(None, None)),
                 patch("scholarposter.enrichment.summarizer.summarize_lemonade", return_value="lemonade result"),
             ):
                 summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
@@ -291,7 +302,7 @@ class TestSummarizeFallbackLogging:
         lid = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
         config = SummarizationConfig(backend="gemini", max_chars=500)
         try:
-            with patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value="gemini result"):
+            with patch("scholarposter.enrichment.summarizer.summarize_via_gemini", return_value=("gemini result", None)):
                 summarize(MULTI_SENTENCE_TEXT, backend="gemini", max_chars=500, prompt="Sum:", config=config)
         finally:
             logger.remove(lid)
@@ -305,7 +316,7 @@ class TestSummarizeFallbackLogging:
             patch("scholarposter.enrichment.summarizer.summarize_ollama", return_value=None),
             patch("scholarposter.enrichment.summarizer.summarize_extractive", return_value="ext result"),
         ):
-            text, backend = summarize(MULTI_SENTENCE_TEXT, backend="lemonade", max_chars=500, prompt="Sum:", config=config)
+            text, backend, usage = summarize(MULTI_SENTENCE_TEXT, backend="lemonade", max_chars=500, prompt="Sum:", config=config)
         assert text == "ext result"
         assert backend == "extractive"  # must reflect actual backend, not requested backend
 
@@ -510,7 +521,7 @@ class TestStdinSafety:
         from scholarposter.enrichment.summarizer import _MAX_STDIN_BYTES
         huge = "A" * (_MAX_STDIN_BYTES + 10_000)
         # Should not crash — extractive handles truncated input
-        text, backend = summarize(
+        text, backend, usage = summarize(
             huge, backend="extractive", max_chars=150,
             prompt="test", config=SummarizationConfig(),
         )
