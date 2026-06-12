@@ -42,7 +42,7 @@ flowchart TD
     E7 -->|yes| E8[Fallback chain]
     E7 -->|no| F
 
-    E8 --> S1[Gemini ACP]
+    E8 --> S1[agy CLI]
     S1 -->|fail| S2[Lemonade]
     S2 -->|fail| S3[Ollama]
     S3 -->|fail| S4[Extractive]
@@ -337,7 +337,7 @@ scholarposter/
 │   ├── html.py             # OG tag extraction, trafilatura body text
 │   ├── pdf.py              # PyMuPDF metadata + pymupdf4llm text
 │   ├── doi.py              # DOI regex detection + Crossref API lookup
-│   ├── summarizer.py       # 4 backends: Gemini ACP, Lemonade, Ollama, extractive
+│   ├── summarizer.py       # 4 backends: agy CLI, Lemonade, Ollama, extractive
 │   └── media.py            # Image download, resize, JPEG conversion
 ├── adapters/
 │   ├── base.py             # BaseAdapter ABC
